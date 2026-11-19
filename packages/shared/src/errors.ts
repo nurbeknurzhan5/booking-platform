@@ -1,0 +1,43 @@
+/** Коды ошибок API. Формат ответа: { error: { code, message, details? } }. */
+export const ERROR_CODES = [
+  'VALIDATION_ERROR',
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'CONFLICT',
+  'RATE_LIMITED',
+  'CSRF_INVALID',
+  'MFA_REQUIRED',
+  'MFA_INVALID',
+  'PASSWORD_CHANGE_REQUIRED',
+  'INVALID_CREDENTIALS',
+  'SUBSCRIPTION_INACTIVE',
+  'BRANCH_LIMIT_REACHED',
+  'SLOT_UNAVAILABLE',
+  'BOOKING_DISABLED',
+  'BOOKING_TOO_SOON',
+  'BOOKING_TOO_FAR',
+  'CLIENT_ACTIVE_LIMIT',
+  'CLIENT_OVERLAP',
+  'HOLD_EXPIRED',
+  'HOLD_EXTENSION_NOT_ALLOWED',
+  'OTP_INVALID',
+  'OTP_EXPIRED',
+  'OTP_ATTEMPTS_EXCEEDED',
+  'OTP_RATE_LIMITED',
+  'INVALID_STATUS_TRANSITION',
+  'RESCHEDULE_DEADLINE_PASSED',
+  'CANCEL_DEADLINE_PASSED',
+  'PROMO_INVALID',
+  'IDEMPOTENCY_KEY_REUSED',
+  'IDEMPOTENCY_IN_PROGRESS',
+  'FILE_INVALID',
+  'FILE_TOO_LARGE',
+  'REVIEW_NOT_ALLOWED',
+  'INTERNAL_ERROR',
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export interface ApiErrorBody {
+  error: { code: ErrorCode | string; message: string; details?: unknown };
+}

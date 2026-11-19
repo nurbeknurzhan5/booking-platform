@@ -1,0 +1,37 @@
+{
+  "name": "booking-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @booking/shared && npm run build -w @booking/api && npm run build -w @booking/web",
+    "build:shared": "npm run build -w @booking/shared",
+    "dev:api": "npm run start:dev -w @booking/api",
+    "dev:worker": "npm run worker:dev -w @booking/api",
+    "dev:web": "npm run dev -w @booking/web",
+    "test": "npm run test -w @booking/shared && npm run test -w @booking/api",
+    "test:e2e": "npm run test:e2e -w @booking/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "db:migrate": "npm run db:migrate -w @booking/api",
+    "db:seed": "npm run db:seed -w @booking/api"
+  },
+  "devDependencies": {
+    "prettier": "^3.10.1"
+  },
+  "allowScripts": {
+    "@swc/core@1.16.22": true,
+    "argon2@0.45.2": true,
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true,
+    "@parcel/watcher@2.6.0": true
+  }
+}

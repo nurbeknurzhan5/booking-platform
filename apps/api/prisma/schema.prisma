@@ -1,0 +1,1510 @@
+// Схема БД платформы онлайн-записи. ERD и правила: docs/ERD.md
+// Ограничения, которые Prisma не выражает (EXCLUDE, частичные уникальные индексы, CHECK, триггеры),
+// находятся в ручных SQL-миграциях (prisma/migrations/*_constraints).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+// Расширения btree_gist, citext, pgcrypto создаются в первой миграции.
+datasource db {
+  provider = "postgresql"
+}
+
+// ================= ENUMS =================
+
+enum AppointmentStatus {
+  pending_otp
+  confirmed
+  completed
+  no_show
+  cancelled_by_client
+  cancelled_by_admin
+  expired_otp
+}
+
+enum SubscriptionStatus {
+  active
+  grace_period
+  expired
+  suspended
+}
+
+enum PageStatus {
+  active
+  temporarily_closed
+  disabled
+}
+
+enum ResourceType {
+  specialist
+  cabinet
+  hall
+  equipment
+  vehicle
+  service_bay
+  other
+}
+
+enum TranslationStatus {
+  missing
+  auto_translated
+  verified
+  manually_edited
+}
+
+enum NotificationStatus {
+  pending
+  sending
+  sent
+  delivered
+  read
+  failed
+  dead
+  cancelled
+}
+
+enum NotificationChannel {
+  whatsapp
+  sms
+  email
+  dev_inbox
+}
+
+enum DiscountType {
+  percent
+  fixed
+}
+
+enum PromotionKind {
+  promo_code
+  sale
+}
+
+enum ReviewStatus {
+  published
+  hidden
+}
+
+enum TemplateStatus {
+  draft
+  published
+  disabled
+}
+
+enum MultiServiceMode {
+  sequential
+  parallel
+}
+
+enum JobStatus {
+  pending
+  running
+  done
+  failed
+  dead
+}
+
+// ================= ПОЛЬЗОВАТЕЛИ И ДОСТУП (§20.1) =================
+
+model User {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String?   @unique @db.Citext
+  phone              String?   @unique @db.VarChar(16)
+  phoneVerifiedAt    DateTime? @map("phone_verified_at") @db.Timestamptz(3)
+  name               String    @db.VarChar(200)
+  passwordHash       String?   @map("password_hash")
+  isSuperadmin       Boolean   @default(false) @map("is_superadmin")
+  mfaSecretEnc       String?   @map("mfa_secret_enc")
+  mfaEnabled         Boolean   @default(false) @map("mfa_enabled")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  locale             String    @default("ru") @db.VarChar(2)
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz(3)
+  blockedAt          DateTime? @map("blocked_at") @db.Timestamptz(3)
+  blockedReason      String?   @map("blocked_reason")
+  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions      UserSession[]
+  orgRoles      UserOrganizationRole[]
+  branchAccess  UserBranchAccess[]
+  clients       Client[]
+  auditLogs     AuditLog[]
+  consents      ClientConsent[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
+  kind        String    @db.VarChar(10) // staff | client
+  mfaVerified Boolean   @default(false) @map("mfa_verified")
+  ip          String?   @db.VarChar(64)
+  userAgent   String?   @map("user_agent") @db.VarChar(500)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model OtpCode {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone         String    @db.VarChar(16)
+  purpose       String    @db.VarChar(20) // login | booking
+  /// HMAC-SHA256(code) с серверным секретом. Код в открытом виде не хранится.
+  codeHash      String    @map("code_hash") @db.VarChar(64)
+  appointmentId String?   @map("appointment_id") @db.Uuid
+  attempts      Int       @default(0)
+  maxAttempts   Int       @map("max_attempts")
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt    DateTime? @map("consumed_at") @db.Timestamptz(3)
+  invalidatedAt DateTime? @map("invalidated_at") @db.Timestamptz(3)
+  ip            String?   @db.VarChar(64)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([phone, purpose, createdAt])
+  @@index([ip, createdAt])
+  @@index([appointmentId])
+  @@map("otp_codes")
+}
+
+model Role {
+  code        String           @id @db.VarChar(30)
+  name        String           @db.VarChar(100)
+  permissions RolePermission[]
+  orgRoles    UserOrganizationRole[]
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("roles")
+}
+
+model Permission {
+  code         String                 @id @db.VarChar(60)
+  scope        String                 @db.VarChar(10) // branch | org
+  description  String                 @db.VarChar(200)
+  roles        RolePermission[]
+  branchGrants UserBranchPermission[]
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleCode       String     @map("role_code") @db.VarChar(30)
+  permissionCode String     @map("permission_code") @db.VarChar(60)
+  role           Role       @relation(fields: [roleCode], references: [code], onDelete: Cascade)
+  permission     Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+
+  @@id([roleCode, permissionCode])
+  @@map("role_permissions")
+}
+
+model UserOrganizationRole {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  roleCode       String    @map("role_code") @db.VarChar(30)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleCode], references: [code])
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("user_organization_roles")
+}
+
+model UserBranchAccess {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch      Branch                 @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  permissions UserBranchPermission[]
+
+  @@unique([userId, branchId])
+  @@index([organizationId])
+  @@map("user_branch_access")
+}
+
+model UserBranchPermission {
+  accessId       String           @map("access_id") @db.Uuid
+  permissionCode String           @map("permission_code") @db.VarChar(60)
+  access         UserBranchAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+  permission     Permission       @relation(fields: [permissionCode], references: [code])
+
+  @@id([accessId, permissionCode])
+  @@map("user_branch_permissions")
+}
+
+model AuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorType      String   @map("actor_type") @db.VarChar(20) // user | superadmin | client | system
+  action         String   @db.VarChar(100)
+  entityType     String   @map("entity_type") @db.VarChar(60)
+  entityId       String?  @map("entity_id") @db.VarChar(64)
+  before         Json?
+  after          Json?
+  ip             String?  @db.VarChar(64)
+  userAgent      String?  @map("user_agent") @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ================= SAAS (§20.2) =================
+
+model BusinessCategory {
+  code          String         @id @db.VarChar(40)
+  nameRu        String         @map("name_ru") @db.VarChar(100)
+  nameKk        String         @map("name_kk") @db.VarChar(100)
+  nameEn        String         @map("name_en") @db.VarChar(100)
+  isActive      Boolean        @default(true) @map("is_active")
+  sortOrder     Int            @default(0) @map("sort_order")
+  organizations Organization[]
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("business_categories")
+}
+
+model Organization {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String    @db.VarChar(200)
+  businessCategoryCode String    @map("business_category_code") @db.VarChar(40)
+  description          String?
+  contacts             Json      @default("{}")
+  defaultLocale        String    @default("ru") @map("default_locale") @db.VarChar(2)
+  notificationSettings Json      @default("{}") @map("notification_settings")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt           DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  businessCategory  BusinessCategory       @relation(fields: [businessCategoryCode], references: [code])
+  members           UserOrganizationRole[]
+  branches          Branch[]
+  subscription      Subscription?
+  payments          SubscriptionPayment[]
+  subscriptionLog   SubscriptionHistory[]
+  serviceCategories ServiceCategory[]
+  services          Service[]
+  clients           Client[]
+  promotions        Promotion[]
+  auditLogs         AuditLog[]
+  assets            MediaAsset[]
+  translations      PageTranslation[]
+  integrations      IntegrationSetting[]
+  whatsappAccounts  WhatsappAccount[]
+  consents          ClientConsent[]
+
+  @@map("organizations")
+}
+
+model Plan {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code          String         @unique @db.VarChar(40)
+  name          String         @db.VarChar(200)
+  description   String?
+  maxBranches   Int            @map("max_branches")
+  monthlyPrice  Int            @map("monthly_price")
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String             @unique @map("organization_id") @db.Uuid
+  planId            String             @map("plan_id") @db.Uuid
+  maxBranches       Int                @map("max_branches")
+  price             Int
+  startsAt          DateTime           @map("starts_at") @db.Timestamptz(3)
+  endsAt            DateTime           @map("ends_at") @db.Timestamptz(3)
+  graceDays         Int                @default(7) @map("grace_days")
+  /// Последний вычисленный статус (пересчитывается воркером и при каждом изменении).
+  status            SubscriptionStatus
+  suspended         Boolean            @default(false)
+  suspendedReason   String?            @map("suspended_reason")
+  lastPaymentAt     DateTime?          @map("last_payment_at") @db.Timestamptz(3)
+  lastPaymentAmount Int?               @map("last_payment_amount")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  plan         Plan                  @relation(fields: [planId], references: [id])
+  payments     SubscriptionPayment[]
+  history      SubscriptionHistory[]
+
+  @@map("subscriptions")
+}
+
+model SubscriptionPayment {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  subscriptionId   String   @map("subscription_id") @db.Uuid
+  amount           Int
+  paidAt           DateTime @map("paid_at") @db.Timestamptz(3)
+  method           String   @db.VarChar(30)
+  reference        String?  @db.VarChar(200)
+  note             String?
+  recordedByUserId String?  @map("recorded_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, paidAt])
+  @@map("subscription_payments")
+}
+
+model SubscriptionHistory {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  subscriptionId String              @map("subscription_id") @db.Uuid
+  action         String              @db.VarChar(40)
+  fromStatus     SubscriptionStatus? @map("from_status")
+  toStatus       SubscriptionStatus? @map("to_status")
+  snapshot       Json
+  actorUserId    String?             @map("actor_user_id") @db.Uuid
+  note           String?
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@map("subscription_history")
+}
+
+// ================= ФИЛИАЛЫ =================
+
+model Branch {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String    @db.VarChar(200)
+  /// Постоянная ссылка публичной страницы. Не меняется при смене шаблона.
+  slug           String    @unique @db.VarChar(60)
+  address        String?   @db.VarChar(500)
+  phone          String?   @db.VarChar(16)
+  timezone       String    @default("Asia/Almaty") @db.VarChar(64)
+  description    String?
+  latitude       Float?
+  longitude      Float?
+  mapUrl         String?   @map("map_url") @db.VarChar(500)
+  mapEnabled     Boolean   @default(true) @map("map_enabled")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  access             UserBranchAccess[]
+  bookingSettings    BookingSettings?
+  branchServices     BranchService[]
+  resources          Resource[]
+  specialists        Specialist[]
+  workingHours       WorkingHours[]
+  breaks             Break[]
+  exceptions         ScheduleException[]
+  appointments       Appointment[]
+  page               PublicPage?
+  reviews            Review[]
+  waitlist           WaitlistEntry[]
+  analyticsEvents    AnalyticsEvent[]
+  analyticsDaily     AnalyticsDailyAggregate[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model BookingSettings {
+  branchId                       String           @id @map("branch_id") @db.Uuid
+  organizationId                 String           @map("organization_id") @db.Uuid
+  slotIntervalMinutes            Int              @default(15) @map("slot_interval_minutes")
+  holdMinutes                    Int              @default(5) @map("hold_minutes")
+  holdExtensionAllowed           Boolean          @default(true) @map("hold_extension_allowed")
+  minLeadMinutes                 Int              @default(60) @map("min_lead_minutes")
+  maxHorizonDays                 Int              @default(60) @map("max_horizon_days")
+  rescheduleDeadlineMinutes      Int              @default(120) @map("reschedule_deadline_minutes")
+  cancelDeadlineMinutes          Int              @default(120) @map("cancel_deadline_minutes")
+  allowLateCancelException       Boolean          @default(false) @map("allow_late_cancel_exception")
+  maxActiveAppointmentsPerClient Int              @default(3) @map("max_active_appointments_per_client")
+  allowRebookWithActive          Boolean          @default(true) @map("allow_rebook_with_active")
+  adminCanOverrideClientLimits   Boolean          @default(true) @map("admin_can_override_client_limits")
+  multiServiceMode               MultiServiceMode @default(sequential) @map("multi_service_mode")
+  loadBalancing                  Boolean          @default(true) @map("load_balancing")
+  specialistPricingEnabled       Boolean          @default(false) @map("specialist_pricing_enabled")
+  reminderHoursBefore            Int              @default(24) @map("reminder_hours_before")
+  onlineBookingEnabled           Boolean          @default(true) @map("online_booking_enabled")
+  // Waitlist (§9): архитектурно предусмотрено
+  waitlistEnabled                Boolean          @default(false) @map("waitlist_enabled")
+  waitlistOfferMinutes           Int              @default(15) @map("waitlist_offer_minutes")
+  waitlistRecipients             Int              @default(3) @map("waitlist_recipients")
+  createdAt                      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch Branch @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, branchId])
+  @@map("booking_settings")
+}
+
+// ================= УСЛУГИ (§20.3) =================
+
+model ServiceCategory {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String    @db.VarChar(200)
+  sortOrder      Int       @default(0) @map("sort_order")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  services     Service[]
+
+  @@unique([organizationId, id])
+  @@map("service_categories")
+}
+
+model Service {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  categoryId           String?   @map("category_id") @db.Uuid
+  name                 String    @db.VarChar(200)
+  description          String?
+  photoAssetId         String?   @map("photo_asset_id") @db.Uuid
+  price                Int
+  durationMinutes      Int       @map("duration_minutes")
+  bufferBeforeMinutes  Int       @default(0) @map("buffer_before_minutes")
+  bufferAfterMinutes   Int       @default(0) @map("buffer_after_minutes")
+  requiresSpecialist   Boolean   @default(true) @map("requires_specialist")
+  isActive             Boolean   @default(true) @map("is_active")
+  onlineBookingEnabled Boolean   @default(true) @map("online_booking_enabled")
+  sortOrder            Int       @default(0) @map("sort_order")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt           DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  organization     Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  category         ServiceCategory?    @relation(fields: [organizationId, categoryId], references: [organizationId, id], onDelete: Restrict)
+  photo            MediaAsset?         @relation(fields: [organizationId, photoAssetId], references: [organizationId, id], onDelete: Restrict)
+  branchServices   BranchService[]
+  requirements     ServiceResource[]
+  specialists      SpecialistService[]
+  resources        ResourceService[]
+  appointmentItems AppointmentItem[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, sortOrder])
+  @@map("services")
+}
+
+model BranchService {
+  organizationId String   @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  priceOverride  Int?     @map("price_override")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch  Branch  @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  service Service @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@id([branchId, serviceId])
+  @@index([organizationId, serviceId])
+  @@map("branch_services")
+}
+
+/// Требования услуги к ресурсам: «нужен quantity ресурсов типа resource_type, поддерживающих услугу».
+model ServiceResource {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  serviceId      String       @map("service_id") @db.Uuid
+  resourceType   ResourceType @map("resource_type")
+  quantity       Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  service Service @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([serviceId, resourceType])
+  @@map("service_resources")
+}
+
+// ================= РЕСУРСЫ И СПЕЦИАЛИСТЫ (§6) =================
+
+model Resource {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  branchId       String       @map("branch_id") @db.Uuid
+  type           ResourceType
+  name           String       @db.VarChar(200)
+  description    String?
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt     DateTime?    @map("archived_at") @db.Timestamptz(3)
+
+  branch       Branch                @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  specialist   Specialist?
+  services     ResourceService[]
+  workingHours WorkingHours[]
+  breaks       Break[]
+  exceptions   ScheduleException[]
+  bookings     AppointmentResource[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, branchId, id])
+  @@index([branchId, type])
+  @@map("resources")
+}
+
+/// Список услуг, которые поддерживает ресурс (кабинет, пост и т.д.).
+model ResourceService {
+  organizationId String   @map("organization_id") @db.Uuid
+  resourceId     String   @map("resource_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  resource Resource @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Cascade)
+  service  Service  @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@id([resourceId, serviceId])
+  @@index([serviceId])
+  @@map("resource_services")
+}
+
+model Specialist {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  branchId       String    @map("branch_id") @db.Uuid
+  /// Специалист — ресурс типа specialist (универсальная модель занятости).
+  resourceId     String    @unique @map("resource_id") @db.Uuid
+  /// Необязательная связь с сотрудником (один сотрудник — разные карточки в разных филиалах).
+  userId         String?   @map("user_id") @db.Uuid
+  name           String    @db.VarChar(200)
+  specialization String?   @db.VarChar(200)
+  description    String?
+  photoAssetId   String?   @map("photo_asset_id") @db.Uuid
+  isActive       Boolean   @default(true) @map("is_active")
+  isPublic       Boolean   @default(true) @map("is_public")
+  sortOrder      Int       @default(0) @map("sort_order")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  branch   Branch              @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  resource Resource            @relation(fields: [organizationId, branchId, resourceId], references: [organizationId, branchId, id], onDelete: Restrict)
+  photo    MediaAsset?         @relation(fields: [organizationId, photoAssetId], references: [organizationId, id], onDelete: Restrict)
+  services SpecialistService[]
+  items    AppointmentItem[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, branchId, resourceId])
+  @@index([branchId])
+  @@map("specialists")
+}
+
+model SpecialistService {
+  organizationId String   @map("organization_id") @db.Uuid
+  specialistId   String   @map("specialist_id") @db.Uuid
+  serviceId      String   @map("service_id") @db.Uuid
+  priceOverride  Int?     @map("price_override")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  specialist Specialist @relation(fields: [organizationId, specialistId], references: [organizationId, id], onDelete: Cascade)
+  service    Service    @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@id([specialistId, serviceId])
+  @@index([serviceId])
+  @@map("specialist_services")
+}
+
+// ================= РАСПИСАНИЯ (§7) =================
+
+/// Рабочие интервалы по дням недели. resource_id = NULL — расписание филиала.
+/// Время — минуты от полуночи в часовом поясе филиала.
+model WorkingHours {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  resourceId     String?  @map("resource_id") @db.Uuid
+  weekday        Int // 1..7 (ISO)
+  startMinute    Int      @map("start_minute")
+  endMinute      Int      @map("end_minute")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch   Branch    @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  resource Resource? @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([branchId, resourceId])
+  @@map("working_hours")
+}
+
+model Break {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  resourceId     String?  @map("resource_id") @db.Uuid
+  weekday        Int
+  startMinute    Int      @map("start_minute")
+  endMinute      Int      @map("end_minute")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch   Branch    @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  resource Resource? @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([branchId, resourceId])
+  @@map("breaks")
+}
+
+/// Исключения: праздники, выходные, отпуск, временное закрытие (closed) или особые часы (custom_hours).
+model ScheduleException {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  resourceId     String?  @map("resource_id") @db.Uuid
+  dateFrom       DateTime @map("date_from") @db.Date
+  dateTo         DateTime @map("date_to") @db.Date
+  kind           String   @db.VarChar(20)
+  /// [{ start: minute, end: minute }]
+  intervals      Json     @default("[]")
+  reason         String?  @db.VarChar(300)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch   Branch    @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  resource Resource? @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([branchId, dateFrom, dateTo])
+  @@map("schedule_exceptions")
+}
+
+// ================= КЛИЕНТЫ И ЗАПИСИ (§20.4) =================
+
+/// Карточка клиента внутри организации. Платформенный профиль — users (решение D-10).
+model Client {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  name           String    @db.VarChar(200)
+  phone          String    @db.VarChar(16)
+  locale         String    @default("ru") @db.VarChar(2)
+  notes          String?
+  mergedIntoId   String?   @map("merged_into_id") @db.Uuid
+  anonymizedAt   DateTime? @map("anonymized_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  mergedInto   Client?               @relation("ClientMerge", fields: [organizationId, mergedIntoId], references: [organizationId, id], onDelete: Restrict)
+  mergedFrom   Client[]              @relation("ClientMerge")
+  appointments Appointment[]
+  reviews      Review[]
+  redemptions  PromotionRedemption[]
+  waitlist     WaitlistEntry[]
+  consents     ClientConsent[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, phone])
+  @@index([userId])
+  @@map("clients")
+}
+
+/// Журнал согласий (append-only). Текущее значение — последняя запись по типу.
+model ClientConsent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  clientId       String?  @map("client_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  phone          String   @db.VarChar(16)
+  consentType    String   @map("consent_type") @db.VarChar(30) // personal_data | notifications | whatsapp | marketing
+  granted        Boolean
+  textVersion    String   @map("text_version") @db.VarChar(20)
+  source         String   @db.VarChar(30)
+  ip             String?  @db.VarChar(64)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  client       Client?       @relation(fields: [organizationId, clientId], references: [organizationId, id], onDelete: Restrict)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([phone, consentType, createdAt])
+  @@index([clientId])
+  @@map("client_consents")
+}
+
+model Appointment {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String            @map("organization_id") @db.Uuid
+  branchId           String            @map("branch_id") @db.Uuid
+  clientId           String            @map("client_id") @db.Uuid
+  status             AppointmentStatus
+  startAt            DateTime          @map("start_at") @db.Timestamptz(3)
+  endAt              DateTime          @map("end_at") @db.Timestamptz(3)
+  timezone           String            @db.VarChar(64)
+  source             String            @db.VarChar(20) // online | admin
+  locale             String            @default("ru") @db.VarChar(2)
+  comment            String?
+  /// SHA-256 токена ссылки управления записью (гостевая запись, D-11).
+  manageTokenHash    String?           @unique @map("manage_token_hash") @db.VarChar(64)
+  // --- snapshot цены (§5, §12) ---
+  currency           String            @default("KZT") @db.VarChar(3)
+  baseTotal          Int               @map("base_total")
+  saleDiscountTotal  Int               @default(0) @map("sale_discount_total")
+  promoDiscountTotal Int               @default(0) @map("promo_discount_total")
+  totalPrice         Int               @map("total_price")
+  promoCode          String?           @map("promo_code") @db.VarChar(50)
+  promotionId        String?           @map("promotion_id") @db.Uuid
+  // --- жизненный цикл ---
+  confirmedAt        DateTime?         @map("confirmed_at") @db.Timestamptz(3)
+  completedAt        DateTime?         @map("completed_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason       String?           @map("cancel_reason")
+  rescheduleCount    Int               @default(0) @map("reschedule_count")
+  reminderSentAt     DateTime?         @map("reminder_sent_at") @db.Timestamptz(3)
+  createdByUserId    String?           @map("created_by_user_id") @db.Uuid
+  // --- атрибуция (§17) ---
+  visitorSession     String?           @map("visitor_session") @db.VarChar(64)
+  utm                Json?
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch        Branch                     @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  client        Client                     @relation(fields: [organizationId, clientId], references: [organizationId, id], onDelete: Restrict)
+  items         AppointmentItem[]
+  resources     AppointmentResource[]
+  statusHistory AppointmentStatusHistory[]
+  reschedules   AppointmentReschedule[]
+  hold          BookingHold?
+  review        Review?
+  redemption    PromotionRedemption?
+
+  @@unique([organizationId, id])
+  @@index([organizationId, branchId, startAt])
+  @@index([clientId, status])
+  @@index([status, startAt])
+  @@map("appointments")
+}
+
+model AppointmentItem {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String    @map("organization_id") @db.Uuid
+  appointmentId          String    @map("appointment_id") @db.Uuid
+  serviceId              String    @map("service_id") @db.Uuid
+  specialistId           String?   @map("specialist_id") @db.Uuid
+  position               Int
+  startAt                DateTime  @map("start_at") @db.Timestamptz(3)
+  endAt                  DateTime  @map("end_at") @db.Timestamptz(3)
+  durationMinutes        Int       @map("duration_minutes")
+  bufferBeforeMinutes    Int       @map("buffer_before_minutes")
+  bufferAfterMinutes     Int       @map("buffer_after_minutes")
+  serviceNameSnapshot    String    @map("service_name_snapshot") @db.VarChar(200)
+  specialistNameSnapshot String?   @map("specialist_name_snapshot") @db.VarChar(200)
+  basePrice              Int       @map("base_price")
+  saleDiscount           Int       @default(0) @map("sale_discount")
+  salePromotionId        String?   @map("sale_promotion_id") @db.Uuid
+  promoDiscount          Int       @default(0) @map("promo_discount")
+  finalPrice             Int       @map("final_price")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  appointment Appointment           @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+  service     Service               @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict)
+  specialist  Specialist?           @relation(fields: [organizationId, specialistId], references: [organizationId, id], onDelete: Restrict)
+  resources   AppointmentResource[]
+
+  @@unique([organizationId, id])
+  @@index([appointmentId])
+  @@index([specialistId, startAt])
+  @@map("appointment_items")
+}
+
+/// Занятость ресурса. EXCLUDE-ограничение (миграция constraints) запрещает пересечение активных строк одного ресурса.
+model AppointmentResource {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  appointmentId     String   @map("appointment_id") @db.Uuid
+  appointmentItemId String   @map("appointment_item_id") @db.Uuid
+  resourceId        String   @map("resource_id") @db.Uuid
+  /// Интервал занятости с учётом буферов.
+  startAt           DateTime @map("start_at") @db.Timestamptz(3)
+  endAt             DateTime @map("end_at") @db.Timestamptz(3)
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  appointment Appointment     @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+  item        AppointmentItem @relation(fields: [organizationId, appointmentItemId], references: [organizationId, id], onDelete: Cascade)
+  resource    Resource        @relation(fields: [organizationId, resourceId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([resourceId, startAt])
+  @@index([appointmentId])
+  @@map("appointment_resources")
+}
+
+model AppointmentStatusHistory {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  appointmentId  String             @map("appointment_id") @db.Uuid
+  fromStatus     AppointmentStatus? @map("from_status")
+  toStatus       AppointmentStatus  @map("to_status")
+  actorType      String             @map("actor_type") @db.VarChar(20)
+  actorUserId    String?            @map("actor_user_id") @db.Uuid
+  reason         String?
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  appointment Appointment @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([appointmentId, createdAt])
+  @@map("appointment_status_history")
+}
+
+model AppointmentReschedule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  appointmentId  String   @map("appointment_id") @db.Uuid
+  oldStartAt     DateTime @map("old_start_at") @db.Timestamptz(3)
+  oldEndAt       DateTime @map("old_end_at") @db.Timestamptz(3)
+  newStartAt     DateTime @map("new_start_at") @db.Timestamptz(3)
+  newEndAt       DateTime @map("new_end_at") @db.Timestamptz(3)
+  oldItems       Json     @map("old_items")
+  newItems       Json     @map("new_items")
+  actorType      String   @map("actor_type") @db.VarChar(20)
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  appointment Appointment @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@map("appointment_reschedules")
+}
+
+/// Временный резерв (§8.3). Пока released_at IS NULL, запись в pending_otp удерживает ресурсы.
+model BookingHold {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  appointmentId  String    @unique @map("appointment_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash") @db.VarChar(64)
+  phone          String    @db.VarChar(16)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(3)
+  extensionCount Int       @default(0) @map("extension_count")
+  releasedAt     DateTime? @map("released_at") @db.Timestamptz(3)
+  releaseReason  String?   @map("release_reason") @db.VarChar(20) // confirmed | expired | abandoned
+  ip             String?   @db.VarChar(64)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  appointment Appointment @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, appointmentId])
+  @@index([expiresAt])
+  @@map("booking_holds")
+}
+
+/// Лист ожидания (§9) — архитектурно предусмотрен, логика предложений вне первого запуска (D-24).
+model WaitlistEntry {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  branchId       String    @map("branch_id") @db.Uuid
+  clientId       String    @map("client_id") @db.Uuid
+  serviceIds     String[]  @map("service_ids") @db.Uuid
+  specialistId   String?   @map("specialist_id") @db.Uuid
+  dateFrom       DateTime  @map("date_from") @db.Date
+  dateTo         DateTime  @map("date_to") @db.Date
+  status         String    @default("waiting") @db.VarChar(20)
+  priority       Int       @default(0)
+  offeredAt      DateTime? @map("offered_at") @db.Timestamptz(3)
+  offerExpiresAt DateTime? @map("offer_expires_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch Branch @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+  client Client @relation(fields: [organizationId, clientId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([branchId, status, dateFrom])
+  @@map("waitlist_entries")
+}
+
+/// Идемпотентность (§21). scope включает тип операции и субъекта (IP/пользователь).
+model IdempotencyKey {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope          String    @db.VarChar(200)
+  key            String    @db.VarChar(100)
+  requestHash    String    @map("request_hash") @db.VarChar(64)
+  responseStatus Int?      @map("response_status")
+  responseBody   Json?     @map("response_body")
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([createdAt])
+  @@map("idempotency_keys")
+}
+
+// ================= ПУБЛИЧНЫЕ СТРАНИЦЫ (§20.5) =================
+
+model PageTemplate {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key              String         @unique @db.VarChar(40)
+  name             String         @db.VarChar(200)
+  description      String?
+  status           TemplateStatus @default(draft)
+  currentVersionId String?        @unique @map("current_version_id") @db.Uuid
+  previewAssetId   String?        @map("preview_asset_id") @db.Uuid
+  sortOrder        Int            @default(0) @map("sort_order")
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  versions       PageTemplateVersion[] @relation("TemplateVersions")
+  currentVersion PageTemplateVersion?  @relation("TemplateCurrentVersion", fields: [currentVersionId], references: [id])
+  drafts         PageDraft[]
+  publications   PagePublication[]
+
+  @@map("page_templates")
+}
+
+model PageTemplateVersion {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId      String   @map("template_id") @db.Uuid
+  version         Int
+  config          Json
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  template     PageTemplate      @relation("TemplateVersions", fields: [templateId], references: [id], onDelete: Restrict)
+  currentOf    PageTemplate?     @relation("TemplateCurrentVersion")
+  drafts       PageDraft[]
+  publications PagePublication[]
+
+  @@unique([templateId, version])
+  @@map("page_template_versions")
+}
+
+model PublicPage {
+  id                     String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String     @map("organization_id") @db.Uuid
+  branchId               String     @unique @map("branch_id") @db.Uuid
+  status                 PageStatus @default(active)
+  primaryLocale          String     @default("ru") @map("primary_locale") @db.VarChar(2)
+  moderationBlocked      Boolean    @default(false) @map("moderation_blocked")
+  moderationReason       String?    @map("moderation_reason")
+  moderatedAt            DateTime?  @map("moderated_at") @db.Timestamptz(3)
+  moderatedByUserId      String?    @map("moderated_by_user_id") @db.Uuid
+  publishedPublicationId String?    @unique @map("published_publication_id") @db.Uuid
+  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch       Branch            @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  draft        PageDraft?
+  publications PagePublication[] @relation("PagePublications")
+  published    PagePublication?  @relation("PageCurrentPublication", fields: [publishedPublicationId], references: [id])
+  history      PageHistory[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, branchId])
+  @@map("public_pages")
+}
+
+model PageDraft {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  pageId                String   @unique @map("page_id") @db.Uuid
+  content               Json
+  templateId            String   @map("template_id") @db.Uuid
+  templateVersionId     String   @map("template_version_id") @db.Uuid
+  colorScheme           String   @map("color_scheme") @db.VarChar(40)
+  bookingButtonPosition String   @map("booking_button_position") @db.VarChar(20)
+  primaryLocale         String   @map("primary_locale") @db.VarChar(2)
+  hasChanges            Boolean  @default(true) @map("has_changes")
+  updatedByUserId       String?  @map("updated_by_user_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  page            PublicPage          @relation(fields: [organizationId, pageId], references: [organizationId, id], onDelete: Cascade)
+  template        PageTemplate        @relation(fields: [templateId], references: [id])
+  templateVersion PageTemplateVersion @relation(fields: [templateVersionId], references: [id])
+
+  @@unique([organizationId, pageId])
+  @@map("page_drafts")
+}
+
+/// Неизменяемый снимок опубликованной версии страницы.
+model PagePublication {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  pageId                String   @map("page_id") @db.Uuid
+  version               Int
+  content               Json
+  /// Снимок переводов контента страницы на момент публикации.
+  translations          Json     @default("{}")
+  templateId            String   @map("template_id") @db.Uuid
+  templateVersionId     String   @map("template_version_id") @db.Uuid
+  colorScheme           String   @map("color_scheme") @db.VarChar(40)
+  bookingButtonPosition String   @map("booking_button_position") @db.VarChar(20)
+  primaryLocale         String   @map("primary_locale") @db.VarChar(2)
+  publishedByUserId     String?  @map("published_by_user_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  page            PublicPage          @relation("PagePublications", fields: [organizationId, pageId], references: [organizationId, id], onDelete: Restrict)
+  currentOf       PublicPage?         @relation("PageCurrentPublication")
+  template        PageTemplate        @relation(fields: [templateId], references: [id])
+  templateVersion PageTemplateVersion @relation(fields: [templateVersionId], references: [id])
+
+  @@unique([pageId, version])
+  @@map("page_publications")
+}
+
+model PageHistory {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  pageId         String   @map("page_id") @db.Uuid
+  action         String   @db.VarChar(40)
+  publicationId  String?  @map("publication_id") @db.Uuid
+  templateId     String?  @map("template_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  details        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  page PublicPage @relation(fields: [organizationId, pageId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+  @@map("page_history")
+}
+
+/// Переводы контента (страница, услуги, специалисты, категории, акции) — §13.5.
+model PageTranslation {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String            @map("organization_id") @db.Uuid
+  entityType      String            @map("entity_type") @db.VarChar(30)
+  entityId        String            @map("entity_id") @db.Uuid
+  field           String            @db.VarChar(60)
+  locale          String            @db.VarChar(2)
+  text            String?
+  status          TranslationStatus @default(missing)
+  /// auto | manual
+  source          String?           @db.VarChar(10)
+  sourceLocale    String            @map("source_locale") @db.VarChar(2)
+  /// SHA-256 исходного текста — для определения устаревших переводов.
+  sourceHash      String?           @map("source_hash") @db.VarChar(64)
+  isOutdated      Boolean           @default(false) @map("is_outdated")
+  updatedByUserId String?           @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, entityType, entityId, field, locale])
+  @@index([organizationId, status])
+  @@map("page_translations")
+}
+
+/// Медиафайлы (логотипы, фото, изображения услуг и специалистов) — §24. Файлы лежат в объектном хранилище.
+model MediaAsset {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String?   @map("organization_id") @db.Uuid
+  kind             String    @db.VarChar(30)
+  storageKey       String    @unique @map("storage_key") @db.VarChar(300)
+  mimeType         String    @map("mime_type") @db.VarChar(50)
+  width            Int
+  height           Int
+  sizeBytes        Int       @map("size_bytes")
+  /// { thumb: key, medium: key, large: key }
+  variants         Json
+  originalName     String?   @map("original_name") @db.VarChar(255)
+  uploadedByUserId String?   @map("uploaded_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  services     Service[]
+  specialists  Specialist[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, kind])
+  @@map("media_assets")
+}
+
+// ================= КОММУНИКАЦИИ (§20.6) =================
+
+model NotificationTemplate {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type                 String              @db.VarChar(40)
+  channel              NotificationChannel
+  locale               String              @db.VarChar(2)
+  /// Имя одобренного шаблона Meta (для WhatsApp).
+  providerTemplateName String?             @map("provider_template_name") @db.VarChar(100)
+  /// AUTHENTICATION | UTILITY | MARKETING (категории Meta)
+  category             String              @db.VarChar(20)
+  /// Текст для SMS/dev_inbox с плейсхолдерами {{name}}.
+  body                 String
+  /// Порядок параметров шаблона Meta.
+  variables            Json                @default("[]")
+  isActive             Boolean             @default(true) @map("is_active")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([type, channel, locale])
+  @@map("notification_templates")
+}
+
+model NotificationEvent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  type           String   @db.VarChar(40)
+  /// Уникальный ключ события: повторная обработка не создаёт дубликатов (§15.2).
+  dedupeKey      String   @unique @map("dedupe_key") @db.VarChar(200)
+  appointmentId  String?  @map("appointment_id") @db.Uuid
+  payload        Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  messages NotificationOutbox[]
+
+  @@index([appointmentId])
+  @@map("notification_events")
+}
+
+model NotificationOutbox {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String?             @map("organization_id") @db.Uuid
+  eventId           String              @map("event_id") @db.Uuid
+  appointmentId     String?             @map("appointment_id") @db.Uuid
+  clientId          String?             @map("client_id") @db.Uuid
+  type              String              @db.VarChar(40)
+  channel           NotificationChannel
+  recipient         String              @db.VarChar(64)
+  locale            String              @db.VarChar(2)
+  /// Параметры шаблона. Для OTP — зашифрованы (AES-256-GCM) и стираются после отправки.
+  payload           Json                @default("{}")
+  payloadEncrypted  Boolean             @default(false) @map("payload_encrypted")
+  status            NotificationStatus  @default(pending)
+  dedupeKey         String              @unique @map("dedupe_key") @db.VarChar(250)
+  attempts          Int                 @default(0)
+  maxAttempts       Int                 @map("max_attempts")
+  nextAttemptAt     DateTime            @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedAt          DateTime?           @map("locked_at") @db.Timestamptz(3)
+  lockedBy          String?             @map("locked_by") @db.VarChar(100)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+  deliveredAt       DateTime?           @map("delivered_at") @db.Timestamptz(3)
+  readAt            DateTime?           @map("read_at") @db.Timestamptz(3)
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(200)
+  lastError         String?             @map("last_error")
+  expiresAt         DateTime?           @map("expires_at") @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event    NotificationEvent         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  attemptsLog NotificationAttempt[]
+  statuses WhatsappMessageStatus[]
+
+  @@index([status, nextAttemptAt])
+  @@index([organizationId, createdAt])
+  @@index([appointmentId])
+  @@index([providerMessageId])
+  @@map("notification_outbox")
+}
+
+model NotificationAttempt {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outboxId          String    @map("outbox_id") @db.Uuid
+  attemptNo         Int       @map("attempt_no")
+  startedAt         DateTime  @map("started_at") @db.Timestamptz(3)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(3)
+  success           Boolean
+  providerMessageId String?   @map("provider_message_id") @db.VarChar(200)
+  httpStatus        Int?      @map("http_status")
+  errorCode         String?   @map("error_code") @db.VarChar(100)
+  errorMessage      String?   @map("error_message")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  outbox NotificationOutbox @relation(fields: [outboxId], references: [id], onDelete: Cascade)
+
+  @@index([outboxId])
+  @@map("notification_attempts")
+}
+
+model WhatsappAccount {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// NULL — платформенный аккаунт по умолчанию.
+  organizationId String?  @map("organization_id") @db.Uuid
+  wabaId         String   @map("waba_id") @db.VarChar(64)
+  phoneNumberId  String   @unique @map("phone_number_id") @db.VarChar(64)
+  displayPhone   String?  @map("display_phone") @db.VarChar(32)
+  accessTokenEnc String   @map("access_token_enc")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@map("whatsapp_accounts")
+}
+
+model WhatsappMessageStatus {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  outboxId          String?  @map("outbox_id") @db.Uuid
+  providerMessageId String   @map("provider_message_id") @db.VarChar(200)
+  status            String   @db.VarChar(20)
+  errorCode         String?  @map("error_code") @db.VarChar(50)
+  errorTitle        String?  @map("error_title") @db.VarChar(300)
+  occurredAt        DateTime @map("occurred_at") @db.Timestamptz(3)
+  raw               Json
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  outbox NotificationOutbox? @relation(fields: [outboxId], references: [id], onDelete: SetNull)
+
+  @@unique([providerMessageId, status])
+  @@map("whatsapp_message_statuses")
+}
+
+/// Канал dev_inbox: только для dev/test (запрещён в production конфигурацией).
+model DevInboxMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipient String   @db.VarChar(64)
+  type      String   @db.VarChar(40)
+  text      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([recipient, createdAt])
+  @@map("dev_inbox_messages")
+}
+
+// ================= ДОПОЛНИТЕЛЬНО (§20.7) =================
+
+model Review {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  branchId          String       @map("branch_id") @db.Uuid
+  appointmentId     String       @unique @map("appointment_id") @db.Uuid
+  clientId          String       @map("client_id") @db.Uuid
+  rating            Int
+  /// Текст и оценка неизменяемы (триггер в миграции constraints).
+  text              String?
+  authorName        String       @map("author_name") @db.VarChar(200)
+  status            ReviewStatus @default(published)
+  reply             String?
+  repliedAt         DateTime?    @map("replied_at") @db.Timestamptz(3)
+  repliedByUserId   String?      @map("replied_by_user_id") @db.Uuid
+  reportedAt        DateTime?    @map("reported_at") @db.Timestamptz(3)
+  reportReason      String?      @map("report_reason")
+  moderationReason  String?      @map("moderation_reason")
+  moderatedAt       DateTime?    @map("moderated_at") @db.Timestamptz(3)
+  moderatedByUserId String?      @map("moderated_by_user_id") @db.Uuid
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch      Branch      @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  appointment Appointment @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Restrict)
+  client      Client      @relation(fields: [organizationId, clientId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, appointmentId])
+  @@index([branchId, status, createdAt])
+  @@map("reviews")
+}
+
+model Promotion {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  kind           PromotionKind
+  name           String        @db.VarChar(200)
+  code           String?       @db.VarChar(50)
+  description    String?
+  discountType   DiscountType  @map("discount_type")
+  discountValue  Int           @map("discount_value")
+  startsAt       DateTime?     @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime?     @map("ends_at") @db.Timestamptz(3)
+  branchIds      String[]      @map("branch_ids") @db.Uuid
+  allBranches    Boolean       @default(true) @map("all_branches")
+  serviceIds     String[]      @map("service_ids") @db.Uuid
+  allServices    Boolean       @default(true) @map("all_services")
+  minAmount      Int?          @map("min_amount")
+  usageLimit     Int?          @map("usage_limit")
+  perClientLimit Int?          @map("per_client_limit")
+  isActive       Boolean       @default(true) @map("is_active")
+  showOnPage     Boolean       @default(false) @map("show_on_page")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  archivedAt     DateTime?     @map("archived_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  redemptions  PromotionRedemption[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@map("promotions")
+}
+
+model PromotionRedemption {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  promotionId    String   @map("promotion_id") @db.Uuid
+  appointmentId  String   @unique @map("appointment_id") @db.Uuid
+  clientId       String   @map("client_id") @db.Uuid
+  discountAmount Int      @map("discount_amount")
+  /// reserved (резерв) | applied (подтверждена) | released (отменена/истекла)
+  status         String   @db.VarChar(20)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  promotion   Promotion   @relation(fields: [organizationId, promotionId], references: [organizationId, id], onDelete: Restrict)
+  appointment Appointment @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
+  client      Client      @relation(fields: [organizationId, clientId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, appointmentId])
+  @@index([promotionId, status])
+  @@index([promotionId, clientId])
+  @@map("promotion_redemptions")
+}
+
+model AnalyticsEvent {
+  id             BigInt   @id @default(autoincrement())
+  organizationId String   @map("organization_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  type           String   @db.VarChar(30)
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  /// Дневной хэш посетителя без cookies (D-19).
+  visitorHash    String   @map("visitor_hash") @db.VarChar(64)
+  sessionId      String?  @map("session_id") @db.VarChar(64)
+  utmSource      String?  @map("utm_source") @db.VarChar(100)
+  utmMedium      String?  @map("utm_medium") @db.VarChar(100)
+  utmCampaign    String?  @map("utm_campaign") @db.VarChar(100)
+  utmTerm        String?  @map("utm_term") @db.VarChar(100)
+  utmContent     String?  @map("utm_content") @db.VarChar(100)
+  referrerHost   String?  @map("referrer_host") @db.VarChar(200)
+  isBot          Boolean  @default(false) @map("is_bot")
+  isInternal     Boolean  @default(false) @map("is_internal")
+  appointmentId  String?  @map("appointment_id") @db.Uuid
+  serviceIds     String[] @map("service_ids") @db.Uuid
+
+  branch Branch @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+
+  @@index([branchId, occurredAt])
+  @@index([organizationId, occurredAt])
+  @@map("analytics_events")
+}
+
+model AnalyticsDailyAggregate {
+  organizationId   String   @map("organization_id") @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  date             DateTime @db.Date
+  pageViews        Int      @default(0) @map("page_views")
+  uniqueVisitors   Int      @default(0) @map("unique_visitors")
+  bookingClicks    Int      @default(0) @map("booking_clicks")
+  bookingStarts    Int      @default(0) @map("booking_starts")
+  bookingsCreated  Int      @default(0) @map("bookings_created")
+  cancellations    Int      @default(0)
+  /// { "<utm_source|referrer|direct>": { views, uniques, bookings } }
+  sources          Json     @default("{}")
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  branch Branch @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
+
+  @@id([branchId, date])
+  @@index([organizationId, date])
+  @@map("analytics_daily_aggregates")
+}
+
+model IntegrationSetting {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// NULL — системная настройка платформы.
+  organizationId String?  @map("organization_id") @db.Uuid
+  provider       String   @db.VarChar(40)
+  config         Json     @default("{}")
+  /// Секреты шифруются AES-256-GCM ключом из переменной окружения.
+  secretEnc      String?  @map("secret_enc")
+  isEnabled      Boolean  @default(false) @map("is_enabled")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, provider])
+  @@map("integration_settings")
+}
+
+model SystemSetting {
+  key             String   @id @db.VarChar(60)
+  value           Json
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("system_settings")
+}
+
+// ================= ИНФРАСТРУКТУРА =================
+
+/// Счётчики rate limit (UNLOGGED-таблица, см. миграцию constraints).
+model RateLimitBucket {
+  key       String   @id @db.VarChar(200)
+  count     Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("rate_limit_buckets")
+}
+
+/// Очередь фоновых задач на PostgreSQL (SKIP LOCKED).
+model Job {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queue       String    @db.VarChar(60)
+  payload     Json      @default("{}")
+  status      JobStatus @default(pending)
+  dedupeKey   String?   @unique @map("dedupe_key") @db.VarChar(200)
+  runAt       DateTime  @default(now()) @map("run_at") @db.Timestamptz(3)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5) @map("max_attempts")
+  lockedAt    DateTime? @map("locked_at") @db.Timestamptz(3)
+  lockedBy    String?   @map("locked_by") @db.VarChar(100)
+  lastError   String?   @map("last_error")
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([queue, status, runAt])
+  @@map("jobs")
+}
