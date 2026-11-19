@@ -1,10 +1,10 @@
 import 'dotenv/config';
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { createPgAdapter } from '../src/common/prisma.service';
 import { seedReferenceData } from '../src/seed/reference-data';
 
 async function main() {
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
+  const prisma = new PrismaClient({ adapter: createPgAdapter(process.env.DATABASE_URL!) });
   try {
     await seedReferenceData(prisma);
     if (process.argv.includes('--demo')) {

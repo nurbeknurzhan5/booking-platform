@@ -42,25 +42,47 @@ export class AppError extends Error {
   }
 }
 
-/** Ищет код ошибки PostgreSQL в цепочке ошибок Prisma/драйвера. */
-export function pgErrorCode(err: unknown, depth = 0): string | null {
-  if (!err || typeof err !== 'object' || depth > 6) return null;
+function findDeep(err: unknown, key: string, depth = 0): unknown {
+  if (!err || typeof err !== 'object' || depth > 6) return undefined;
   const e = err as Record<string, unknown>;
-  for (const k of ['originalCode', 'code']) {
-    const v = e[k];
-    if (typeof v === 'string' && /^[0-9A-Z]{5}$/.test(v)) return v;
-  }
+  if (e[key] !== undefined) return e[key];
   for (const k of ['cause', 'meta', 'driverAdapterError', 'error']) {
-    const found = pgErrorCode(e[k], depth + 1);
-    if (found) return found;
+    const v = findDeep(e[k], key, depth + 1);
+    if (v !== undefined) return v;
   }
-  const msg = typeof e.message === 'string' ? e.message : '';
-  if (msg.includes('appointment_resources_no_overlap') || msg.includes('exclusion constraint')) return '23P01';
+  return undefined;
+}
+
+function messagesDeep(err: unknown, depth = 0): string {
+  if (!err || typeof err !== 'object' || depth > 6) return '';
+  const e = err as Record<string, unknown>;
+  const own = [e.message, e.originalMessage].filter((m): m is string => typeof m === 'string').join(' ');
+  return own + ' ' + ['cause', 'meta', 'driverAdapterError'].map((k) => messagesDeep(e[k], depth + 1)).join(' ');
+}
+
+/**
+ * Код ошибки PostgreSQL (SQLSTATE) в цепочке ошибок Prisma/драйвера.
+ * Приоритет — originalCode драйвера; код Prisma вида P2xxx не является SQLSTATE.
+ */
+export function pgErrorCode(err: unknown): string | null {
+  const original = findDeep(err, 'originalCode');
+  if (typeof original === 'string' && original) return original;
+  const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && !/^P\d{4}$/.test(code)) return code;
+  const msg = messagesDeep(err);
+  if (msg.includes('appointment_resources_no_overlap') || msg.includes('clients_active_phone_unique')) return '23P01';
   return null;
 }
 
 export function isExclusionViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23P01';
+}
+
+/** Взаимоблокировка (40P01) или конфликт сериализации (40001) — транзакцию можно повторить. */
+export function isTransientTxError(err: unknown): boolean {
+  if ((err as { code?: string })?.code === 'P2034') return true;
+  const c = pgErrorCode(err);
+  return c === '40P01' || c === '40001';
 }
 
 export function isUniqueViolation(err: unknown): boolean {

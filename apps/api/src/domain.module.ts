@@ -5,11 +5,70 @@ import { StaffService } from './organizations/staff.service';
 import { SubscriptionsService } from './subscriptions/subscriptions.service';
 import { AdminController } from './admin/admin.controller';
 import { AdminOrganizationsService } from './admin/admin-organizations.service';
+import { ResourcesController, SchedulesController, ServicesController, SpecialistsController } from './catalog/catalog.controller';
+import { ServicesService } from './catalog/services.service';
+import { ResourcesService } from './catalog/resources.service';
+import { SchedulesService } from './catalog/schedules.service';
+import { AvailabilityService } from './booking/availability.service';
+import { BookingService } from './booking/booking.service';
+import { RemindersService } from './booking/reminders.service';
+import { PublicBookingController } from './booking/public-booking.controller';
+import { StaffAppointmentsController } from './booking/staff-appointments.controller';
+import { NotificationDispatcher } from './notifications/dispatcher.service';
+import { DevInboxChannel, SmsChannel, WhatsAppChannel } from './notifications/channels';
+import { WhatsAppWebhookController } from './notifications/whatsapp-webhook.controller';
+import { AdminNotificationsController, DevInboxController, OrgNotificationsController } from './notifications/notifications.controller';
+import { JobsService } from './common/jobs.service';
+import { AnalyticsService } from './analytics/analytics.service';
+import { AnalyticsController } from './analytics/analytics.controller';
+import { GoogleTranslateProvider, TranslationService } from './pages/translation.service';
 
 /** Бизнес-модули платформы (модульный монолит). */
 @Module({
-  controllers: [OrganizationsController, AdminController],
-  providers: [BranchesService, StaffService, SubscriptionsService, AdminOrganizationsService],
-  exports: [BranchesService, SubscriptionsService],
+  controllers: [
+    OrganizationsController,
+    AdminController,
+    ServicesController,
+    SpecialistsController,
+    ResourcesController,
+    SchedulesController,
+    PublicBookingController,
+    StaffAppointmentsController,
+    WhatsAppWebhookController,
+    OrgNotificationsController,
+    AdminNotificationsController,
+    DevInboxController,
+    AnalyticsController,
+  ],
+  providers: [
+    BranchesService,
+    StaffService,
+    SubscriptionsService,
+    AdminOrganizationsService,
+    ServicesService,
+    ResourcesService,
+    SchedulesService,
+    AvailabilityService,
+    BookingService,
+    RemindersService,
+    NotificationDispatcher,
+    WhatsAppChannel,
+    SmsChannel,
+    DevInboxChannel,
+    JobsService,
+    AnalyticsService,
+    GoogleTranslateProvider,
+    TranslationService,
+  ],
+  exports: [
+    BranchesService,
+    SubscriptionsService,
+    BookingService,
+    RemindersService,
+    NotificationDispatcher,
+    AnalyticsService,
+    TranslationService,
+    JobsService,
+  ],
 })
 export class DomainModule {}

@@ -5,10 +5,10 @@
  * Выводит otpauth-URI для приложения-аутентификатора (Google Authenticator, Aegis и т.п.).
  */
 import 'dotenv/config';
-import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
 import { authenticator } from 'otplib';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { createPgAdapter } from '../src/common/prisma.service';
 import { encrypt } from '../src/common/crypto';
 import { loadConfig } from '../src/config/config';
 
@@ -25,7 +25,7 @@ async function main() {
   if (!email) throw new Error('Укажите --email');
   if (!password || password.length < 12) throw new Error('Задайте SUPERADMIN_PASSWORD (минимум 12 символов)');
 
-  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: cfg.DATABASE_URL }) });
+  const prisma = new PrismaClient({ adapter: createPgAdapter(cfg.DATABASE_URL) });
   try {
     const secret = authenticator.generateSecret(20);
     const data = {

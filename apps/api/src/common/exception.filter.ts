@@ -17,6 +17,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body, headers } = this.map(exception);
     if (status >= 500) {
       this.logger.error({ err: exception, path: req.path, requestId: req.requestId }, 'Unhandled error');
+      // eslint-disable-next-line no-console
+      if (process.env.DEBUG_ERRORS === '1') console.error(exception);
     }
     if (headers) for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
     res.status(status).json(body);
