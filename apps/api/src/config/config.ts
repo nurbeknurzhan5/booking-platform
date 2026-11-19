@@ -49,7 +49,7 @@ const EnvSchema = z
     GOOGLE_TRANSLATE_BASE_URL: z.string().default('https://translation.googleapis.com'),
     STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
     STORAGE_LOCAL_DIR: z.string().default('./storage'),
-    STORAGE_PUBLIC_BASE_URL: z.string().default('http://localhost:4000/media'),
+    STORAGE_PUBLIC_BASE_URL: z.string().default('/api/v1/media'),
     S3_ENDPOINT: z.string().optional().default(''),
     S3_REGION: z.string().optional().default('us-east-1'),
     S3_BUCKET: z.string().optional().default(''),

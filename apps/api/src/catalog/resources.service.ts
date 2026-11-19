@@ -4,6 +4,7 @@ import { ResourceInputSchema, SpecialistInputSchema, UpdateResourceSchema, Updat
 import { PrismaService, type Tx } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { AuditService } from '../common/audit.service';
+import { TranslationService } from '../pages/translation.service';
 import type { ActorContext, TenantContext } from '../common/request-context';
 
 type SpecialistInput = z.infer<typeof SpecialistInputSchema>;
@@ -23,6 +24,7 @@ export class ResourcesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly translations: TranslationService,
   ) {}
 
   /** Услуги должны принадлежать организации и быть доступны в филиале. */
@@ -87,6 +89,7 @@ export class ResourcesService {
           data: input.services.map((s) => ({ organizationId, specialistId: sp.id, serviceId: s.serviceId, priceOverride: s.priceOverride ?? null })),
         });
       }
+      await this.translations.syncEntity(tx, organizationId, 'specialist', sp.id, { specialization: input.specialization, description: input.description });
       await this.audit.log(actor, 'specialist.created', 'specialist', sp.id, { after: input }, tx);
       return tx.specialist.findUniqueOrThrow({ where: { id: sp.id }, include: SPECIALIST_INCLUDE });
     });
@@ -123,6 +126,7 @@ export class ResourcesService {
         }
       }
       const after = await tx.specialist.findUniqueOrThrow({ where: { id }, include: SPECIALIST_INCLUDE });
+      await this.translations.syncEntity(tx, organizationId, 'specialist', id, { specialization: after.specialization, description: after.description });
       await this.audit.log(actor, 'specialist.updated', 'specialist', id, { before, after }, tx);
       return after;
     });

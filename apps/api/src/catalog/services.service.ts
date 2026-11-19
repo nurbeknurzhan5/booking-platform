@@ -5,6 +5,7 @@ import { PrismaService, type Tx } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { AuditService } from '../common/audit.service';
 import { allowedBranches } from '../common/tenant-access';
+import { TranslationService } from '../pages/translation.service';
 import type { ActorContext, TenantContext } from '../common/request-context';
 
 type ServiceInput = z.infer<typeof ServiceInputSchema>;
@@ -26,6 +27,7 @@ export class ServicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly translations: TranslationService,
   ) {}
 
   /** Владелец видит весь каталог; администратор — услуги своих филиалов. */
@@ -100,6 +102,7 @@ export class ServicesService {
       });
       await this.replaceBranches(tx, t.organizationId, s.id, input.branches);
       await this.replaceRequirements(tx, t.organizationId, s.id, input.resourceRequirements);
+      await this.translations.syncEntity(tx, t.organizationId, 'service', s.id, { name: input.name, description: input.description });
       await this.audit.log(actor, 'service.created', 'service', s.id, { after: input }, tx);
       return tx.service.findUniqueOrThrow({ where: { id: s.id }, include: SERVICE_INCLUDE });
     });
@@ -131,6 +134,9 @@ export class ServicesService {
       if (input.branches) await this.replaceBranches(tx, t.organizationId, id, input.branches);
       if (input.resourceRequirements) await this.replaceRequirements(tx, t.organizationId, id, input.resourceRequirements);
       const after = await tx.service.findUniqueOrThrow({ where: { id }, include: SERVICE_INCLUDE });
+      if (input.name !== undefined || input.description !== undefined) {
+        await this.translations.syncEntity(tx, t.organizationId, 'service', id, { name: after.name, description: after.description });
+      }
       await this.audit.log(actor, 'service.updated', 'service', id, { before, after }, tx);
       return after;
     });
@@ -175,7 +181,11 @@ export class ServicesService {
   }
 
   async createCategory(t: TenantContext, input: z.infer<typeof ServiceCategoryInputSchema>, actor: ActorContext) {
-    const c = await this.prisma.serviceCategory.create({ data: { organizationId: t.organizationId, ...input } });
+    const c = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.serviceCategory.create({ data: { organizationId: t.organizationId, ...input } });
+      await this.translations.syncEntity(tx, t.organizationId, 'service_category', row.id, { name: row.name });
+      return row;
+    });
     await this.audit.log(actor, 'service_category.created', 'service_category', c.id, { after: c });
     return c;
   }

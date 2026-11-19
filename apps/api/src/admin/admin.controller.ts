@@ -24,6 +24,7 @@ import { AuditService } from '../common/audit.service';
 import { AppError } from '../common/errors';
 import { SessionService } from '../auth/session.service';
 import { SystemSettingsService } from '../common/system-settings.service';
+import { getConfig } from '../config/config';
 
 class CreateOrgDto extends createZodDto(CreateOrganizationSchema) {}
 class UpdateOrgDto extends createZodDto(AdminUpdateOrganizationSchema) {}
@@ -226,5 +227,46 @@ export class AdminController {
   @Get('business-categories')
   categories() {
     return this.prisma.businessCategory.findMany({ orderBy: { sortOrder: 'asc' } });
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Системная статистика платформы' })
+  async stats() {
+    const since = new Date(Date.now() - 30 * 86400_000);
+    const [orgs, subs, branches, appts, apptByStatus, outbox, users] = await Promise.all([
+      this.prisma.organization.count({ where: { archivedAt: null } }),
+      this.prisma.subscription.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.branch.count({ where: { archivedAt: null } }),
+      this.prisma.appointment.count({ where: { createdAt: { gte: since } } }),
+      this.prisma.appointment.groupBy({ by: ['status'], where: { createdAt: { gte: since } }, _count: { _all: true } }),
+      this.prisma.notificationOutbox.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.user.count(),
+    ]);
+    const revenue = await this.prisma.subscriptionPayment.aggregate({ where: { paidAt: { gte: since } }, _sum: { amount: true } });
+    return {
+      organizations: orgs,
+      subscriptions: Object.fromEntries(subs.map((s) => [s.status, s._count._all])),
+      branches,
+      users,
+      appointmentsLast30Days: appts,
+      appointmentsByStatus: Object.fromEntries(apptByStatus.map((s) => [s.status, s._count._all])),
+      notificationQueue: Object.fromEntries(outbox.map((s) => [s.status, s._count._all])),
+      paymentsLast30Days: revenue._sum.amount ?? 0,
+    };
+  }
+
+  @Get('integrations')
+  @ApiOperation({ summary: 'Состояние интеграций (без секретов)' })
+  integrations() {
+    const c = getConfig();
+    return {
+      notificationChannels: c.NOTIFICATION_CHANNELS,
+      otpChannels: c.OTP_CHANNELS,
+      whatsapp: { configured: !!(c.WHATSAPP_PHONE_NUMBER_ID && c.WHATSAPP_ACCESS_TOKEN), webhookSecretConfigured: !!c.WHATSAPP_APP_SECRET, apiVersion: c.WHATSAPP_API_VERSION },
+      sms: { provider: c.SMS_PROVIDER, configured: !!c.SMS_API_KEY },
+      translation: { provider: 'google', configured: !!c.GOOGLE_TRANSLATE_API_KEY },
+      storage: { driver: c.STORAGE_DRIVER, s3Configured: !!(c.S3_BUCKET && c.S3_ACCESS_KEY_ID) },
+      environment: c.APP_ENV,
+    };
   }
 }

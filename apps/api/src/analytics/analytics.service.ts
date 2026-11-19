@@ -156,7 +156,8 @@ export class AnalyticsService {
       }
     }
 
-    const apptWhere = { organizationId, ...branchCond, startAt: { gte: from, lt: toExclusive } };
+    // Записи, созданные в периоде (согласовано с «успешными записями», которые фиксируются при подтверждении).
+    const apptWhere = { organizationId, ...branchCond, createdAt: { gte: from, lt: toExclusive } };
     const [popularServices, popularSpecialists, statusCounts] = await Promise.all([
       this.prisma.appointmentItem.groupBy({
         by: ['serviceId', 'serviceNameSnapshot'],

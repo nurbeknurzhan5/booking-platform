@@ -12,3 +12,7 @@ process.env.NOTIFICATION_CHANNELS = 'dev_inbox';
 process.env.STORAGE_DRIVER = 'local';
 process.env.STORAGE_LOCAL_DIR = path.join(__dirname, '..', '.test-storage');
 process.env.COOKIE_SECURE = 'false';
+process.env.STORAGE_PUBLIC_BASE_URL = '/api/v1/media';
+process.env.GOOGLE_TRANSLATE_API_KEY = '';
+process.env.WHATSAPP_ACCESS_TOKEN = '';
+process.env.SMS_API_KEY = '';

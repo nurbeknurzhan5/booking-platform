@@ -77,6 +77,13 @@ export class TranslationService {
     }
   }
 
+  /** Синхронизация с исходным языком организации (услуги, специалисты, категории, акции). */
+  async syncEntity(tx: Tx, organizationId: string, entityType: EntityType, entityId: string, fields: Record<string, string | null | undefined>) {
+    const org = await tx.organization.findUnique({ where: { id: organizationId }, select: { defaultLocale: true } });
+    const source = ((LOCALES as readonly string[]).includes(org?.defaultLocale ?? '') ? org!.defaultLocale : 'ru') as Locale;
+    await this.sync(tx, organizationId, entityType, entityId, source, fields);
+  }
+
   list(organizationId: string, filter: { entityType?: EntityType; entityIds?: string[]; locale?: Locale }) {
     return this.prisma.pageTranslation.findMany({
       where: {
@@ -101,9 +108,21 @@ export class TranslationService {
       const existing = await this.prisma.pageTranslation.findUnique({ where: key });
       const status: TranslationStatus =
         it.verified && existing?.status === 'auto_translated' && existing.text === it.text ? 'verified' : 'manually_edited';
+      const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { defaultLocale: true } });
       await this.prisma.pageTranslation.upsert({
         where: key,
-        create: { organizationId, entityType: it.entityType, entityId: it.entityId, field: it.field, locale: it.locale, text: it.text, status, source: 'manual', sourceLocale: 'ru', updatedByUserId: userId },
+        create: {
+          organizationId,
+          entityType: it.entityType,
+          entityId: it.entityId,
+          field: it.field,
+          locale: it.locale,
+          text: it.text,
+          status,
+          source: 'manual',
+          sourceLocale: org?.defaultLocale ?? 'ru',
+          updatedByUserId: userId,
+        },
         update: { text: it.text, status, source: status === 'verified' ? 'auto' : 'manual', isOutdated: false, updatedByUserId: userId },
       });
     }
