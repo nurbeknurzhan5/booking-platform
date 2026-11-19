@@ -1,0 +1,196 @@
+'use client';
+
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useOrg } from '@/components/dashboard/OrgContext';
+import { useApi } from '@/lib/hooks';
+import { useT } from '@/lib/i18n-dashboard';
+import { api, errorMessage } from '@/lib/api';
+import { Alert, Button, Card, Checkbox, Field, Input, PageHeader, Select, Spinner, Tabs, Textarea } from '@/components/ui';
+import { SpecialistsTab, ResourcesTab } from '@/components/dashboard/BranchStaffTabs';
+import { ScheduleTab } from '@/components/dashboard/ScheduleTab';
+
+type Tab = 'settings' | 'rules' | 'specialists' | 'resources' | 'schedule';
+
+interface BranchFull {
+  id: string;
+  name: string;
+  slug: string;
+  address: string | null;
+  phone: string | null;
+  timezone: string;
+  description: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  mapUrl: string | null;
+  mapEnabled: boolean;
+}
+
+export default function BranchDetailPage() {
+  const { branchId } = useParams<{ branchId: string }>();
+  const { base, org, can, isOwner, setBranchId } = useOrg();
+  const { t } = useT();
+  const [tab, setTab] = useState<Tab>('settings');
+  useEffect(() => setBranchId(branchId), [branchId, setBranchId]);
+  const branch = useApi<BranchFull>(`${base}/branches/${branchId}`);
+  if (branch.loading) return <Spinner />;
+  if (!branch.data) return <Alert>{branch.error}</Alert>;
+  const b = branch.data;
+
+  const tabs: Array<{ value: Tab; label: string }> = [
+    { value: 'settings', label: t('settings') },
+    ...(isOwner ? [{ value: 'rules' as Tab, label: t('bookingRules') }] : []),
+    { value: 'specialists', label: t('specialists') },
+    { value: 'resources', label: t('resources') },
+    { value: 'schedule', label: t('schedule') },
+  ];
+
+  return (
+    <div>
+      <PageHeader
+        title={b.name}
+        subtitle={<a href={`/ru/b/${b.slug}`} target="_blank" rel="noreferrer" className="text-brand-700 underline">/ru/b/{b.slug}</a>}
+        actions={can('pages.edit', b.id) && <Link href={`/dashboard/${org.id}/branches/${b.id}/page-editor`}><Button variant="secondary">{t('editPage')}</Button></Link>}
+      />
+      <Tabs value={tab} onChange={setTab} items={tabs} />
+      {tab === 'settings' && <BranchSettings branch={b} onSaved={branch.reload} canEdit={can('branch.settings.manage', b.id)} />}
+      {tab === 'rules' && <BookingRules branchId={b.id} />}
+      {tab === 'specialists' && <SpecialistsTab branchId={b.id} />}
+      {tab === 'resources' && <ResourcesTab branchId={b.id} />}
+      {tab === 'schedule' && <ScheduleTab branchId={b.id} />}
+    </div>
+  );
+}
+
+function BranchSettings({ branch, onSaved, canEdit }: { branch: BranchFull; onSaved: () => void; canEdit: boolean }) {
+  const { base } = useOrg();
+  const { t } = useT();
+  const [f, setF] = useState(branch);
+  const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
+  return (
+    <Card>
+      <form
+        className="grid gap-3 sm:grid-cols-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setMsg({});
+          try {
+            await api(`${base}/branches/${branch.id}`, {
+              method: 'PATCH',
+              body: {
+                name: f.name,
+                address: f.address || undefined,
+                phone: f.phone || undefined,
+                timezone: f.timezone,
+                description: f.description || undefined,
+                latitude: f.latitude === null || (f.latitude as unknown) === '' ? undefined : Number(f.latitude),
+                longitude: f.longitude === null || (f.longitude as unknown) === '' ? undefined : Number(f.longitude),
+                mapUrl: f.mapUrl || undefined,
+                mapEnabled: f.mapEnabled,
+              },
+            });
+            setMsg({ ok: t('saved') });
+            onSaved();
+          } catch (err) {
+            setMsg({ err: errorMessage(err) });
+          }
+        }}
+      >
+        <div className="sm:col-span-2"><Alert>{msg.err}</Alert>{msg.ok && <Alert tone="green">{msg.ok}</Alert>}</div>
+        <Field label={t('name')}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} disabled={!canEdit} /></Field>
+        <Field label={t('phone')}><Input value={f.phone ?? ''} onChange={(e) => setF({ ...f, phone: e.target.value })} disabled={!canEdit} /></Field>
+        <Field label={t('address')} className="sm:col-span-2"><Input value={f.address ?? ''} onChange={(e) => setF({ ...f, address: e.target.value })} disabled={!canEdit} /></Field>
+        <Field label={t('description')} className="sm:col-span-2"><Textarea rows={3} value={f.description ?? ''} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} /></Field>
+        <Field label={t('timezone')}>
+          <Select value={f.timezone} onChange={(e) => setF({ ...f, timezone: e.target.value })} disabled={!canEdit}>
+            {['Asia/Almaty', 'Asia/Qostanay', 'Asia/Aqtobe', 'Asia/Aqtau', 'Asia/Atyrau', 'Asia/Oral', 'Asia/Qyzylorda'].map((z) => <option key={z}>{z}</option>)}
+          </Select>
+        </Field>
+        <Field label="2GIS URL"><Input value={f.mapUrl ?? ''} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} disabled={!canEdit} placeholder="https://2gis.kz/..." /></Field>
+        <Field label="Latitude"><Input type="number" step="any" value={f.latitude ?? ''} onChange={(e) => setF({ ...f, latitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} /></Field>
+        <Field label="Longitude"><Input type="number" step="any" value={f.longitude ?? ''} onChange={(e) => setF({ ...f, longitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} /></Field>
+        <Checkbox checked={f.mapEnabled} onChange={(e) => setF({ ...f, mapEnabled: e.target.checked })} label="2GIS" disabled={!canEdit} />
+        {canEdit && <div className="flex justify-end sm:col-span-2"><Button type="submit">{t('save')}</Button></div>}
+      </form>
+    </Card>
+  );
+}
+
+interface Rules {
+  slotIntervalMinutes: number;
+  holdMinutes: number;
+  holdExtensionAllowed: boolean;
+  minLeadMinutes: number;
+  maxHorizonDays: number;
+  rescheduleDeadlineMinutes: number;
+  cancelDeadlineMinutes: number;
+  allowLateCancelException: boolean;
+  maxActiveAppointmentsPerClient: number;
+  allowRebookWithActive: boolean;
+  adminCanOverrideClientLimits: boolean;
+  multiServiceMode: 'sequential' | 'parallel';
+  loadBalancing: boolean;
+  specialistPricingEnabled: boolean;
+  reminderHoursBefore: number;
+  onlineBookingEnabled: boolean;
+}
+
+function BookingRules({ branchId }: { branchId: string }) {
+  const { base } = useOrg();
+  const { t } = useT();
+  const { data, setData } = useApi<Rules>(`${base}/branches/${branchId}/booking-settings`);
+  const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
+  if (!data) return <Spinner />;
+  const num = (k: keyof Rules, label: Parameters<typeof t>[0]) => (
+    <Field label={t(label)}><Input type="number" min={0} value={data[k] as number} onChange={(e) => setData({ ...data, [k]: Number(e.target.value) })} /></Field>
+  );
+  const bool = (k: keyof Rules, label: Parameters<typeof t>[0]) => <Checkbox checked={data[k] as boolean} onChange={(e) => setData({ ...data, [k]: e.target.checked })} label={t(label)} />;
+  return (
+    <Card>
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setMsg({});
+          try {
+            const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled } = data;
+            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled } }));
+            setMsg({ ok: t('saved') });
+          } catch (err) {
+            setMsg({ err: errorMessage(err) });
+          }
+        }}
+      >
+        <Alert>{msg.err}</Alert>
+        {msg.ok && <Alert tone="green">{msg.ok}</Alert>}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {num('slotIntervalMinutes', 'slotInterval')}
+          {num('holdMinutes', 'holdMinutes')}
+          {num('minLeadMinutes', 'minLead')}
+          {num('maxHorizonDays', 'maxHorizon')}
+          {num('rescheduleDeadlineMinutes', 'rescheduleDeadline')}
+          {num('cancelDeadlineMinutes', 'cancelDeadline')}
+          {num('maxActiveAppointmentsPerClient', 'maxActive')}
+          {num('reminderHoursBefore', 'reminderHours')}
+          <Field label={t('multiMode')}>
+            <Select value={data.multiServiceMode} onChange={(e) => setData({ ...data, multiServiceMode: e.target.value as Rules['multiServiceMode'] })}>
+              <option value="sequential">{t('sequential')}</option>
+              <option value="parallel">{t('parallel')}</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {bool('onlineBookingEnabled', 'onlineBooking')}
+          {bool('holdExtensionAllowed', 'holdExtension')}
+          {bool('allowLateCancelException', 'lateCancel')}
+          {bool('allowRebookWithActive', 'rebookWithActive')}
+          {bool('adminCanOverrideClientLimits', 'adminOverride')}
+          {bool('loadBalancing', 'loadBalancing')}
+          {bool('specialistPricingEnabled', 'specialistPricing')}
+        </div>
+        <div className="flex justify-end"><Button type="submit">{t('save')}</Button></div>
+      </form>
+    </Card>
+  );
+}

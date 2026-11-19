@@ -3,9 +3,11 @@
 // находятся в ручных SQL-миграциях (prisma/migrations/*_constraints).
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  // Импорты без расширения: совместимо с CommonJS-сборкой (SWC) и Jest.
+  importFileExtension = ""
 }
 
 // Расширения btree_gist, citext, pgcrypto создаются в первой миграции.
