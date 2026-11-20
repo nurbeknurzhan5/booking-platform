@@ -1,16 +1,17 @@
 /**
- * Создание (или сброс MFA) суперадминистратора.
- * Использование: npm run superadmin:create -w @booking/api -- --email admin@example.kz --name "Имя"
- * Пароль запрашивается из переменной SUPERADMIN_PASSWORD (не передавайте пароль аргументом — он попадёт в историю shell).
+ * Создание суперадминистратора или сброс его MFA.
+ * Разработка:  SUPERADMIN_PASSWORD=... npm run superadmin:create -w @booking/api -- --email admin@example.kz --name "Имя"
+ * Production:  docker compose ... run --rm -e SUPERADMIN_PASSWORD=... api node dist/cli/create-superadmin.js --email admin@example.kz
+ * Пароль передаётся только через переменную окружения (не аргументом, чтобы не попал в историю shell).
  * Выводит otpauth-URI для приложения-аутентификатора (Google Authenticator, Aegis и т.п.).
  */
 import 'dotenv/config';
 import * as argon2 from 'argon2';
 import { authenticator } from 'otplib';
-import { PrismaClient } from '../src/generated/prisma/client';
-import { createPgAdapter } from '../src/common/prisma.service';
-import { encrypt } from '../src/common/crypto';
-import { loadConfig } from '../src/config/config';
+import { PrismaClient } from '../generated/prisma/client';
+import { createPgAdapter } from '../common/prisma.service';
+import { encrypt } from '../common/crypto';
+import { loadConfig } from '../config/config';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -38,18 +39,14 @@ async function main() {
     };
     const user = await prisma.user.upsert({ where: { email }, create: { email, ...data }, update: data });
     await prisma.userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
-    await prisma.auditLog.create({
-      data: { actorType: 'system', action: 'superadmin.provisioned', entityType: 'user', entityId: user.id },
-    });
-    // eslint-disable-next-line no-console
-    console.log(`Суперадминистратор: ${email}\nДобавьте в приложение-аутентификатор:\n${authenticator.keyuri(email, 'BookingPlatform', secret)}`);
+    await prisma.auditLog.create({ data: { actorType: 'system', action: 'superadmin.provisioned', entityType: 'user', entityId: user.id } });
+    console.warn(`Суперадминистратор: ${email}\nДобавьте в приложение-аутентификатор:\n${authenticator.keyuri(email, 'BookingPlatform', secret)}`);
   } finally {
     await prisma.$disconnect();
   }
 }
 
 main().catch((e) => {
-  // eslint-disable-next-line no-console
   console.error(e instanceof Error ? e.message : e);
   process.exit(1);
 });

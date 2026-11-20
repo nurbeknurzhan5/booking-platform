@@ -1,0 +1,138 @@
+# Production-развёртывание (§27). Запуск: см. docs/OPERATIONS.md
+#   cp infra/.env.prod.example infra/.env.prod   # заполнить секреты
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+# Хостинг должен располагаться в РК (локализация персональных данных, R-05).
+name: booking
+
+x-api-env: &api-env
+  NODE_ENV: production
+  APP_ENV: production
+  PORT: 4000
+  LOG_LEVEL: info
+  TRUST_PROXY: 2
+  COOKIE_SECURE: "true"
+  WEB_ORIGIN: https://${DOMAIN}
+  PUBLIC_BASE_URL: https://${DOMAIN}
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+  DATABASE_POOL_SIZE: 20
+  OTP_HMAC_SECRET: ${OTP_HMAC_SECRET}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+  ANALYTICS_SECRET: ${ANALYTICS_SECRET}
+  NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-whatsapp}
+  OTP_CHANNELS: ${OTP_CHANNELS:-whatsapp,sms}
+  WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v23.0}
+  WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+  WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+  WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+  WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+  SMS_PROVIDER: ${SMS_PROVIDER:-mobizon}
+  SMS_API_KEY: ${SMS_API_KEY:-}
+  SMS_SENDER: ${SMS_SENDER:-}
+  GOOGLE_TRANSLATE_API_KEY: ${GOOGLE_TRANSLATE_API_KEY:-}
+  STORAGE_DRIVER: s3
+  STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL}
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_REGION: ${S3_REGION}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: UTC
+      PGTZ: UTC
+    command: ["postgres", "-c", "timezone=UTC", "-c", "shared_buffers=512MB", "-c", "max_connections=200", "-c", "archive_mode=on", "-c", "archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f", "-c", "wal_level=replica"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - walarchive:/wal-archive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  migrate:
+    image: booking-api:${VERSION:-latest}
+    build: { context: .., dockerfile: infra/docker/api.Dockerfile }
+    environment: *api-env
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/seed/run-reference-seed.js"]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+    networks: [internal]
+
+  api:
+    image: booking-api:${VERSION:-latest}
+    restart: unless-stopped
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 2 }
+    networks: [internal]
+
+  worker:
+    image: booking-api:${VERSION:-latest}
+    restart: unless-stopped
+    environment: *api-env
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [internal]
+
+  web:
+    image: booking-web:${VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: infra/docker/web.Dockerfile
+      args: { NEXT_PUBLIC_2GIS_KEY: "${NEXT_PUBLIC_2GIS_KEY:-}" }
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    depends_on: [api]
+    networks: [internal]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment: { DOMAIN: "${DOMAIN}" }
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on: [web]
+    networks: [internal]
+
+  backup:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backup:/scripts:ro
+      - backups:/backups
+      - walarchive:/wal-archive
+    entrypoint: ["sh", "/scripts/backup-loop.sh"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+
+volumes:
+  pgdata:
+  walarchive:
+  backups:
+  caddydata:
+
+networks:
+  internal:

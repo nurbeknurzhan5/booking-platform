@@ -108,9 +108,12 @@ export class RateLimitGuard implements CanActivate {
     const route = `${req.method}:${(req.route as { path?: string } | undefined)?.path ?? req.path}`;
     const ip = clientIp(req);
     const rules = this.reflector.getAllAndOverride<RateLimitRule[]>(RATE_LIMIT_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
-    const defaults: RateLimitRule[] = req.user
-      ? [{ name: 'default-user', limit: 1200, windowSec: 60, by: 'user' }]
-      : [{ name: 'default-ip', limit: 300, windowSec: 60, by: 'ip+route' }];
+    // Явные правила маршрута заменяют правило по умолчанию (одна запись счётчика на запрос).
+    const defaults: RateLimitRule[] = rules.length
+      ? []
+      : req.user
+        ? [{ name: 'default-user', limit: 1200, windowSec: 60, by: 'user' }]
+        : [{ name: 'default-ip', limit: 300, windowSec: 60, by: 'ip+route' }];
     for (const r of [...rules, ...defaults]) {
       const subject = r.by === 'user' ? `u:${req.user?.id ?? ip}` : r.by === 'ip' ? `ip:${ip}` : `ip:${ip}:${route}`;
       await this.rateLimit.consume(`rl:${r.name}:${subject}`, r.limit, r.windowSec);

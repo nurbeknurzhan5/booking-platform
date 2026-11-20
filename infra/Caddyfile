@@ -1,0 +1,17 @@
+# HTTPS (автоматические сертификаты Let's Encrypt) и обратный прокси на Next.js.
+# /api/* проксируется Next.js на внутренний API-сервис (cookie остаются first-party).
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	request_body {
+		max_size 8MB
+	}
+	reverse_proxy web:3000
+	log {
+		output stdout
+		format json
+	}
+}

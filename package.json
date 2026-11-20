@@ -17,14 +17,17 @@
     "dev:web": "npm run dev -w @booking/web",
     "test": "npm run test -w @booking/shared && npm run test -w @booking/api",
     "test:e2e": "npm run test:e2e -w @booking/web",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "eslint apps/api/src apps/api/test packages/shared/src apps/web/src apps/web/e2e",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "db:migrate": "npm run db:migrate -w @booking/api",
     "db:seed": "npm run db:seed -w @booking/api"
   },
   "devDependencies": {
-    "prettier": "^3.10.1"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript-eslint": "^8.73.0"
   },
   "allowScripts": {
     "@swc/core@1.16.22": true,

@@ -102,12 +102,17 @@ export class AvailabilityService {
     const midnight = DateTime.fromISO(date, { zone: branch.timezone }).startOf('day');
     if (!midnight.isValid) throw AppError.badRequest('VALIDATION_ERROR', 'Некорректная дата');
     const dateObj = new Date(`${date}T00:00:00.000Z`);
-    // Последовательно: внутри транзакции запросы идут по одному соединению.
-    const hours = await db.workingHours.findMany({ where: { branchId, OR: [{ resourceId: null }, { resourceId: { in: resIds } }] } });
-    const breaks = await db.break.findMany({ where: { branchId, OR: [{ resourceId: null }, { resourceId: { in: resIds } }] } });
-    const exceptions = await db.scheduleException.findMany({
-      where: { branchId, dateFrom: { lte: dateObj }, dateTo: { gte: dateObj }, OR: [{ resourceId: null }, { resourceId: { in: resIds } }] },
-    });
+    // Вне транзакции — параллельно; внутри транзакции — последовательно (одно соединение).
+    const ownerFilter = { branchId, OR: [{ resourceId: null }, { resourceId: { in: resIds } }] };
+    const q = [
+      () => db.workingHours.findMany({ where: ownerFilter }),
+      () => db.break.findMany({ where: ownerFilter }),
+      () => db.scheduleException.findMany({ where: { ...ownerFilter, dateFrom: { lte: dateObj }, dateTo: { gte: dateObj } } }),
+    ] as const;
+    const parallel = db === this.prisma;
+    const [hours, breaks, exceptions] = parallel
+      ? await Promise.all([q[0](), q[1](), q[2]()])
+      : [await q[0](), await q[1](), await q[2]()];
     const srcFor = (resourceId: string | null): ScheduleSource => ({
       hours: hours.filter((h) => h.resourceId === resourceId).map((h) => ({ weekday: h.weekday, start: h.startMinute, end: h.endMinute })),
       breaks: breaks.filter((b) => b.resourceId === resourceId).map((b) => ({ weekday: b.weekday, start: b.startMinute, end: b.endMinute })),
