@@ -27,6 +27,7 @@ function Shell({ children }: { children: ReactNode }) {
   const nav: NavItem[] = [
     { href: base, label: 'overview', show: true },
     { href: `${base}/appointments`, label: 'appointments', show: can('appointments.view') },
+    { href: `${base}/waitlist`, label: 'waitlist', show: can('appointments.view') },
     { href: `${base}/clients`, label: 'clients', show: can('clients.view') },
     { href: `${base}/services`, label: 'services', show: true },
     { href: `${base}/branches`, label: isOwner ? 'branches' : 'branch', show: true },

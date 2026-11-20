@@ -10,6 +10,9 @@ import {
   RESOURCE_TYPES,
   ANALYTICS_EVENT_TYPES,
   DASHBOARD_LOCALES,
+  WAITLIST_AFTER_EXPIRY,
+  WAITLIST_ENTRY_STATUSES,
+  WAITLIST_PRIORITY_MODES,
 } from './enums';
 import { BRANCH_PERMISSIONS } from './permissions';
 import { normalizePhone, normalizeKzMobile, isKzPhone } from './phone';
@@ -243,6 +246,12 @@ export const BookingSettingsSchema = z.object({
   specialistPricingEnabled: z.boolean(),
   reminderHoursBefore: z.number().int().min(0).max(168),
   onlineBookingEnabled: z.boolean(),
+  // Лист ожидания (§9). Необязательны: не переданное поле не меняется.
+  waitlistEnabled: z.boolean().optional(),
+  waitlistOfferMinutes: z.number().int().min(5).max(24 * 60).optional(),
+  waitlistRecipients: z.number().int().min(1).max(10).optional(),
+  waitlistPriority: z.enum(WAITLIST_PRIORITY_MODES).optional(),
+  waitlistAfterExpiry: z.enum(WAITLIST_AFTER_EXPIRY).optional(),
 });
 export type BookingSettings = z.infer<typeof BookingSettingsSchema>;
 
@@ -263,6 +272,11 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
   specialistPricingEnabled: false,
   reminderHoursBefore: 24,
   onlineBookingEnabled: true,
+  waitlistEnabled: false,
+  waitlistOfferMinutes: 15,
+  waitlistRecipients: 3,
+  waitlistPriority: 'fifo',
+  waitlistAfterExpiry: 'offer_next',
 };
 
 // ---------- бронирование ----------
@@ -343,6 +357,44 @@ export const AppointmentListQuerySchema = zPagination.extend({
   status: z.string().max(200).optional(),
   specialistId: zId.optional(),
   clientId: zId.optional(),
+});
+
+// ---------- лист ожидания (§9) ----------
+const WaitlistRequestBase = z.object({
+  items: z.array(z.object({ serviceId: zId })).min(1).max(5),
+  /** Конкретный специалист для всех услуг или null — любой. */
+  specialistId: zId.nullable().optional(),
+  dateFrom: zDate,
+  dateTo: zDate,
+});
+const dateRangeOk = (v: { dateFrom: string; dateTo: string }) => v.dateFrom <= v.dateTo;
+
+export const JoinWaitlistSchema = WaitlistRequestBase.extend({
+  client: z.object({ name: zName, phone: zKzMobile }),
+  locale: zLocale.default('ru'),
+  consents: z.object({
+    personalData: z.literal(true, { error: 'Требуется согласие на обработку персональных данных' }),
+    notifications: z.boolean().default(true),
+    whatsapp: z.boolean().default(true),
+  }),
+  website: z.string().max(0).optional(),
+  formElapsedMs: z.number().int().min(0).optional(),
+}).refine(dateRangeOk, 'dateFrom должна быть не позже dateTo');
+
+export const WaitlistTokenSchema = z.object({ token: z.string().min(20).max(200) });
+export const ConfirmWaitlistSchema = WaitlistTokenSchema.extend({ code: z.string().regex(/^\d{6}$/) });
+export const DeclineWaitlistOfferSchema = z.object({ leaveWaitlist: z.boolean().default(false) });
+
+export const StaffWaitlistCreateSchema = WaitlistRequestBase.extend({
+  branchId: zId,
+  client: z.object({ name: zName, phone: zKzMobile }),
+  priority: z.number().int().min(0).max(100).default(0),
+}).refine(dateRangeOk, 'dateFrom должна быть не позже dateTo');
+export const StaffWaitlistUpdateSchema = z.object({ priority: z.number().int().min(0).max(100) });
+export const WaitlistListQuerySchema = zPagination.extend({
+  branchId: zId.optional(),
+  /** active = waiting + offered. Без фильтра — все, кроме неподтверждённых. */
+  status: z.enum([...WAITLIST_ENTRY_STATUSES, 'active']).optional(),
 });
 
 // ---------- клиенты ----------

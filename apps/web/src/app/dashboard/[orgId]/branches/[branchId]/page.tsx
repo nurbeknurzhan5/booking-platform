@@ -134,6 +134,11 @@ interface Rules {
   specialistPricingEnabled: boolean;
   reminderHoursBefore: number;
   onlineBookingEnabled: boolean;
+  waitlistEnabled: boolean;
+  waitlistOfferMinutes: number;
+  waitlistRecipients: number;
+  waitlistPriority: 'fifo' | 'priority';
+  waitlistAfterExpiry: 'offer_next' | 'release';
 }
 
 function BookingRules({ branchId }: { branchId: string }) {
@@ -154,8 +159,8 @@ function BookingRules({ branchId }: { branchId: string }) {
           e.preventDefault();
           setMsg({});
           try {
-            const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled } = data;
-            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled } }));
+            const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry } = data;
+            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry } }));
             setMsg({ ok: t('saved') });
           } catch (err) {
             setMsg({ err: errorMessage(err) });
@@ -189,6 +194,29 @@ function BookingRules({ branchId }: { branchId: string }) {
           {bool('loadBalancing', 'loadBalancing')}
           {bool('specialistPricingEnabled', 'specialistPricing')}
         </div>
+        <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <legend className="px-1 text-sm font-medium">{t('waitlist')}</legend>
+          <p className="text-xs text-slate-500">{t('wlHint')}</p>
+          {bool('waitlistEnabled', 'waitlistEnabled')}
+          {data.waitlistEnabled && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {num('waitlistOfferMinutes', 'waitlistOfferMinutes')}
+              {num('waitlistRecipients', 'waitlistRecipients')}
+              <Field label={t('waitlistPriority')}>
+                <Select value={data.waitlistPriority} onChange={(e) => setData({ ...data, waitlistPriority: e.target.value as Rules['waitlistPriority'] })}>
+                  <option value="fifo">{t('wlFifo')}</option>
+                  <option value="priority">{t('wlPriority')}</option>
+                </Select>
+              </Field>
+              <Field label={t('waitlistAfterExpiry')}>
+                <Select value={data.waitlistAfterExpiry} onChange={(e) => setData({ ...data, waitlistAfterExpiry: e.target.value as Rules['waitlistAfterExpiry'] })}>
+                  <option value="offer_next">{t('wlOfferNext')}</option>
+                  <option value="release">{t('wlRelease')}</option>
+                </Select>
+              </Field>
+            </div>
+          )}
+        </fieldset>
         <div className="flex justify-end"><Button type="submit">{t('save')}</Button></div>
       </form>
     </Card>

@@ -7,7 +7,7 @@ import { getConfig } from '../config/config';
 import { RateLimitService } from '../common/rate-limit.service';
 import { SystemSettingsService } from '../common/system-settings.service';
 
-export type OtpPurpose = 'login' | 'booking';
+export type OtpPurpose = 'login' | 'booking' | 'waitlist';
 
 const GLOBAL_OTP_PER_HOUR = 5000;
 

@@ -14,6 +14,8 @@ import { BookingService } from './booking/booking.service';
 import { RemindersService } from './booking/reminders.service';
 import { PublicBookingController } from './booking/public-booking.controller';
 import { StaffAppointmentsController } from './booking/staff-appointments.controller';
+import { WaitlistService } from './booking/waitlist.service';
+import { MeWaitlistController, PublicWaitlistController, StaffWaitlistController } from './booking/waitlist.controller';
 import { NotificationDispatcher } from './notifications/dispatcher.service';
 import { DevInboxChannel, SmsChannel, WhatsAppChannel } from './notifications/channels';
 import { WhatsAppWebhookController } from './notifications/whatsapp-webhook.controller';
@@ -47,6 +49,9 @@ import { PagesController } from './pages/pages.controller';
     SchedulesController,
     PublicBookingController,
     StaffAppointmentsController,
+    PublicWaitlistController,
+    StaffWaitlistController,
+    MeWaitlistController,
     WhatsAppWebhookController,
     OrgNotificationsController,
     AdminNotificationsController,
@@ -69,6 +74,7 @@ import { PagesController } from './pages/pages.controller';
     SchedulesService,
     AvailabilityService,
     BookingService,
+    WaitlistService,
     RemindersService,
     NotificationDispatcher,
     WhatsAppChannel,
@@ -90,6 +96,7 @@ import { PagesController } from './pages/pages.controller';
     BranchesService,
     SubscriptionsService,
     BookingService,
+    WaitlistService,
     RemindersService,
     NotificationDispatcher,
     AnalyticsService,

@@ -231,3 +231,21 @@
 | `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId |  | сотрудник организации (RBAC) |
 | `PATCH` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId | да | сотрудник организации (RBAC) |
 | `DELETE` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId |  | сотрудник организации (RBAC) |
+
+## waitlist
+
+| Метод | URL | Назначение | Параметры | Тело | Доступ |
+|---|---|---|---|---|---|
+| `GET` | `/api/v1/me/waitlist` | Мои заявки в листах ожидания |  |  | клиент (сессия) |
+| `POST` | `/api/v1/me/waitlist/{id}/cancel` | Выйти из листа ожидания | id |  | клиент (сессия) |
+| `GET` | `/api/v1/organizations/{orgId}/waitlist` | Заявки листа ожидания (по филиалам, доступным пользователю) | page, pageSize, branchId, status |  | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/waitlist` | Добавить клиента в лист ожидания |  | да | сотрудник организации (RBAC) |
+| `PATCH` | `/api/v1/organizations/{orgId}/waitlist/{id}` | Изменить приоритет заявки | id | да | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/waitlist/{id}/cancel` | Удалить заявку из листа ожидания | id |  | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/public/branches/{slug}/waitlist` | Встать в лист ожидания (отправляет OTP для подтверждения номера) | slug | да | публичный |
+| `GET` | `/api/v1/public/waitlist-offers/{token}` | Предложение освободившегося времени по ссылке из уведомления | token |  | публичный |
+| `POST` | `/api/v1/public/waitlist-offers/{token}/accept` | Записаться на предложенное время (первый подтвердивший получает слот) | token |  | публичный |
+| `POST` | `/api/v1/public/waitlist-offers/{token}/decline` | Отказаться от предложения (и при желании выйти из листа ожидания) | token | да | публичный |
+| `POST` | `/api/v1/public/waitlist/{id}/cancel` | Выйти из листа ожидания по токену заявки | id | да | публичный |
+| `POST` | `/api/v1/public/waitlist/{id}/confirm` | Подтвердить заявку кодом OTP | id | да | публичный |
+| `POST` | `/api/v1/public/waitlist/{id}/resend-otp` | Повторно отправить OTP для заявки | id | да | публичный |

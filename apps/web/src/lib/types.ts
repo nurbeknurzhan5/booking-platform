@@ -17,7 +17,7 @@ export interface PublicPageData {
   availableLocales: string[];
   autoTranslated: boolean;
   missingTranslation: boolean;
-  availability: { mode: 'open' | 'closed_notice' | 'hidden'; bookingEnabled: boolean; reason: string | null };
+  availability: { mode: 'open' | 'closed_notice' | 'hidden'; bookingEnabled: boolean; waitlistEnabled?: boolean; reason: string | null };
   template: { key: string; layout: 'classic' | 'modern' | 'minimal' | 'bold'; sectionOrder: string[]; colors: ColorScheme; bookingButtonPosition: string };
   branch: {
     id: string;

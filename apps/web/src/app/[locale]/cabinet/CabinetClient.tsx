@@ -19,7 +19,18 @@ interface Profile {
   consents: { notifications: boolean; whatsapp: boolean; marketing: boolean };
 }
 
-type Tab = 'upcoming' | 'history' | 'cancelled' | 'profile';
+interface WaitlistEntryView {
+  id: string;
+  status: 'waiting' | 'offered';
+  dateFrom: string;
+  dateTo: string;
+  branch: { id: string; name: string; slug: string };
+  services: Array<{ id: string; name: string }>;
+  specialist: { id: string; name: string } | null;
+}
+
+type Tab = 'upcoming' | 'history' | 'cancelled' | 'waitlist' | 'profile';
+const TAB_LABEL: Record<Tab, PublicKey> = { upcoming: 'upcoming', history: 'history', cancelled: 'cancelled', waitlist: 'waitlistTitle', profile: 'profile' };
 
 /** Кабинет клиента (§18.1): вход по номеру телефона и OTP. */
 export function CabinetClient({ lang }: { lang: string }) {
@@ -33,6 +44,7 @@ export function CabinetClient({ lang }: { lang: string }) {
   const [list, setList] = useState<AppointmentView[] | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [savedMsg, setSavedMsg] = useState(false);
+  const [waitlist, setWaitlist] = useState<WaitlistEntryView[] | null>(null);
 
   useEffect(() => {
     api<Me>('/auth/me')
@@ -44,6 +56,11 @@ export function CabinetClient({ lang }: { lang: string }) {
     if (!me) return;
     if (tab === 'profile') {
       api<Profile>('/me/profile').then(setProfile).catch((e) => setError(errorMessage(e)));
+      return;
+    }
+    if (tab === 'waitlist') {
+      setWaitlist(null);
+      api<WaitlistEntryView[]>('/me/waitlist').then(setWaitlist).catch((e) => setError(errorMessage(e)));
       return;
     }
     setList(null);
@@ -111,14 +128,47 @@ export function CabinetClient({ lang }: { lang: string }) {
         </button>
       </div>
       <nav className="mb-4 flex gap-1 overflow-x-auto border-b">
-        {(['upcoming', 'history', 'cancelled', 'profile'] as Tab[]).map((k) => (
+        {(['upcoming', 'history', 'cancelled', 'waitlist', 'profile'] as Tab[]).map((k) => (
           <button key={k} onClick={() => setTab(k)} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === k ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}>
-            {t(k)}
+            {t(TAB_LABEL[k])}
           </button>
         ))}
       </nav>
       {error && <p role="alert" className="mb-3 text-sm text-rose-600">{error}</p>}
-      {tab !== 'profile' && (
+      {tab === 'waitlist' && (
+        <div className="space-y-3">
+          {!waitlist && <p className="text-slate-500">{t('loading')}</p>}
+          {waitlist?.length === 0 && <p className="text-slate-500">{t('empty')}</p>}
+          {waitlist?.map((w) => (
+            <div key={w.id} className="rounded-xl border p-4 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Link href={`/${lang}/b/${w.branch.slug}`} className="font-medium underline">{w.branch.name}</Link>
+                  <div className="text-slate-600">{w.services.map((s) => s.name).join(', ')}{w.specialist ? ` · ${w.specialist.name}` : ''}</div>
+                  <div className="text-slate-500">{w.dateFrom} — {w.dateTo}</div>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${w.status === 'offered' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>{t(w.status === 'offered' ? 'wl_offered' : 'wl_waiting')}</span>
+              </div>
+              <button
+                type="button"
+                className="mt-3 text-sm text-rose-600 underline"
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    await api(`/me/waitlist/${w.id}/cancel`, { method: 'POST', body: {} });
+                    setWaitlist((cur) => (cur ?? []).filter((x) => x.id !== w.id));
+                  } catch (err) {
+                    setError(errorMessage(err));
+                  }
+                }}
+              >
+                {t('waitlistLeave')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab !== 'profile' && tab !== 'waitlist' && (
         <div className="tpl space-y-3 rounded-xl">
           {!list && <p className="text-slate-500">{t('loading')}</p>}
           {list?.length === 0 && <p className="text-slate-500">{t('empty')}</p>}

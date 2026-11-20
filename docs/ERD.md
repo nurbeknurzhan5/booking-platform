@@ -46,6 +46,10 @@ erDiagram
   notification_outbox ||--o{ whatsapp_message_statuses : ""
   branches ||--o{ analytics_events : ""
   branches ||--o{ analytics_daily_aggregates : ""
+  clients ||--o{ waitlist_entries : "waitlist request"
+  branches ||--o{ waitlist_releases : "freed time (cancel/reschedule)"
+  waitlist_releases ||--o{ waitlist_offers : "rounds of offers"
+  waitlist_entries ||--o{ waitlist_offers : ""
 ```
 
 ## Изоляция организаций на уровне БД
@@ -65,6 +69,9 @@ erDiagram
 | `branches.slug UNIQUE` | Постоянная ссылка страницы |
 | `promotions (organization_id, code) UNIQUE` | Уникальность промокода |
 | CHECK: время `end > start`, цены ≥ 0, рейтинг 1–5, день недели 1–7, минуты 0–1440, процент ≤ 100, период подписки | Корректность данных |
+| `waitlist_offers_one_accepted`: `UNIQUE (release_id) WHERE status = 'accepted'` | Освободившееся время получает не больше одного клиента из листа ожидания |
+| `waitlist_offers_one_pending_per_entry`: `UNIQUE (entry_id) WHERE status = 'pending'` | У заявки не больше одного действующего предложения |
+| CHECK статусов `waitlist_entries`, `waitlist_releases`, `waitlist_offers` и настроек листа ожидания | Только допустимые значения |
 | Триггер `reviews_immutable_content` | Оценку и текст отзыва изменить нельзя |
 | Триггеры `forbid_modification` | Append-only: оплаты, история подписок, аудит, история статусов и переносов, согласия, публикации страниц |
 

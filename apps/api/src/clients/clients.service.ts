@@ -146,6 +146,12 @@ export class ClientsService {
         data: { name: 'Удалённый клиент', phone: `anon-${id.slice(0, 10)}`, notes: null, userId: null, anonymizedAt: new Date() },
       }),
       this.prisma.review.updateMany({ where: { clientId: id }, data: { authorName: 'Удалённый клиент' } }),
+      // Лист ожидания: заявки и действующие предложения обезличенного клиента аннулируются.
+      this.prisma.waitlistOffer.updateMany({ where: { entry: { clientId: id }, status: 'pending' }, data: { status: 'cancelled' } }),
+      this.prisma.waitlistEntry.updateMany({
+        where: { clientId: id, status: { in: ['pending_otp', 'waiting', 'offered'] } },
+        data: { status: 'cancelled', cancelledAt: new Date(), tokenHash: null, offeredAt: null, offerExpiresAt: null },
+      }),
     ]);
     await this.audit.log(actor, 'client.anonymized', 'client', id, { before: { id } });
   }

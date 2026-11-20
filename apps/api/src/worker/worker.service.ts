@@ -10,6 +10,7 @@ import { SessionService } from '../auth/session.service';
 import { OtpService } from '../auth/otp.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { TranslationService } from '../pages/translation.service';
+import { WaitlistService } from '../booking/waitlist.service';
 
 interface Task {
   name: string;
@@ -43,6 +44,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
     private readonly otp: OtpService,
     private readonly analytics: AnalyticsService,
     private readonly translations: TranslationService,
+    private readonly waitlist: WaitlistService,
   ) {}
 
   tasks(): Task[] {
@@ -53,6 +55,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
       { name: 'subscriptions', intervalMs: 5 * 60_000, singleton: true, run: () => this.subscriptions.refreshStatuses() },
       { name: 'analytics', intervalMs: 10 * 60_000, singleton: true, run: () => this.analytics.aggregateRecent() },
       { name: 'translations', intervalMs: 30_000, singleton: true, run: () => this.translations.processQueue() },
+      { name: 'waitlist', intervalMs: 20_000, singleton: true, run: () => this.waitlist.processReleases() },
       {
         name: 'cleanup',
         intervalMs: 60 * 60_000,

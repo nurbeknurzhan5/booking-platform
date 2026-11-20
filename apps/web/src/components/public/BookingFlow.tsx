@@ -9,7 +9,7 @@ import { dateTime, minutesLabel, money } from '@/lib/format';
 import { analyticsSession, savedUtm, track } from '@/lib/analytics';
 import { SlotPicker } from './SlotPicker';
 
-type Step = 'services' | 'specialists' | 'time' | 'details' | 'otp' | 'done';
+type Step = 'services' | 'specialists' | 'time' | 'details' | 'otp' | 'done' | 'waitlist' | 'waitlistOtp' | 'waitlistDone';
 type Slot = SlotsResponse['slots'][number];
 
 interface HoldResponse {
@@ -18,6 +18,15 @@ interface HoldResponse {
   holdExpiresAt: string;
   otpExpiresAt: string;
   appointment: AppointmentView;
+}
+interface WaitlistJoin {
+  entryId: string;
+  token: string;
+  otpExpiresAt: string;
+}
+/** Сегодняшняя дата YYYY-MM-DD в часовом поясе филиала (+ days). */
+function localISODate(timezone: string, days = 0): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(Date.now() + days * 86400_000));
 }
 interface Quote {
   durationMinutes: number;
@@ -66,6 +75,10 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
   const [done, setDone] = useState<{ appointment: AppointmentView; manageToken: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wlFrom, setWlFrom] = useState(() => localISODate(data.branch.timezone));
+  const [wlTo, setWlTo] = useState(() => localISODate(data.branch.timezone, 7));
+  const [wl, setWl] = useState<WaitlistJoin | null>(null);
+  const [wlLeft, setWlLeft] = useState(false);
   const formStarted = useRef(Date.now());
   const holdKey = useRef(newIdempotencyKey());
   const holdLeft = useCountdown(hold?.holdExpiresAt ?? null);
@@ -177,6 +190,71 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
     }
   }
 
+  // ---------- лист ожидания (§9) ----------
+  async function joinWaitlist() {
+    setError(null);
+    setBusy(true);
+    try {
+      const sps = [...new Set(items.map((i) => i.specialistId ?? null))];
+      const r = await api<WaitlistJoin>(`/public/branches/${data.slug}/waitlist`, {
+        method: 'POST',
+        body: {
+          items: selected.map((serviceId) => ({ serviceId })),
+          specialistId: sps.length === 1 ? sps[0] : null,
+          dateFrom: wlFrom,
+          dateTo: wlTo,
+          client: { name: name.trim(), phone },
+          locale: lang,
+          consents: { personalData: consentPd, notifications: consentNotify, whatsapp: consentWa },
+          website: website || undefined,
+          formElapsedMs: Date.now() - formStarted.current,
+        },
+      });
+      setWl(r);
+      setCode('');
+      setStep('waitlistOtp');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmWaitlist() {
+    if (!wl) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/public/waitlist/${wl.entryId}/confirm`, { method: 'POST', body: { token: wl.token, code } });
+      setStep('waitlistDone');
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendWaitlist() {
+    if (!wl) return;
+    setError(null);
+    try {
+      await api(`/public/waitlist/${wl.entryId}/resend-otp`, { method: 'POST', body: { token: wl.token } });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function leaveWaitlist() {
+    if (!wl) return;
+    setError(null);
+    try {
+      await api(`/public/waitlist/${wl.entryId}/cancel`, { method: 'POST', body: { token: wl.token } });
+      setWlLeft(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   const steps: Array<{ key: Step; label: PublicKey }> = [
     { key: 'services', label: 'step1' },
     ...(needsSpecialistStep ? [{ key: 'specialists' as Step, label: 'step2' as PublicKey }] : []),
@@ -215,7 +293,7 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
         <div className="mb-4 flex items-center justify-between">
           <Link href={`/${lang}/b/${data.slug}`} className="tpl-primary text-sm">← {data.branch.name}</Link>
         </div>
-        {step !== 'done' && (
+        {stepIndex >= 0 && (
           <ol className="mb-5 flex gap-1" aria-label="progress">
             {steps.map((s, i) => (
               <li key={s.key} className={`h-1.5 flex-1 rounded-full ${i <= stepIndex ? 'tpl-btn' : 'tpl-border border'}`} title={t(s.label)} />
@@ -305,10 +383,113 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
                 {slot.items.some((i) => i.specialistName) && ` · ${[...new Set(slot.items.map((i) => i.specialistName).filter(Boolean))].join(', ')}`}
               </p>
             )}
+            {data.availability.waitlistEnabled && (
+              <button type="button" onClick={() => { setError(null); setStep('waitlist'); }} className="tpl-primary mt-4 block text-sm underline" data-testid="waitlist-open">
+                {t('waitlistJoin')}
+              </button>
+            )}
             <Summary />
             <div className="mt-4 flex gap-2">
               <button onClick={() => setStep(needsSpecialistStep ? 'specialists' : 'services')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
               <button disabled={!slot} onClick={() => setStep('details')} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="next">{t('next')}</button>
+            </div>
+          </section>
+        )}
+
+        {step === 'waitlist' && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void joinWaitlist();
+            }}
+          >
+            <h1 className="mb-2 text-xl font-semibold">{t('waitlistTitle')}</h1>
+            <p className="tpl-muted mb-4 text-sm">{t('waitlistText')}</p>
+            <div className="tpl-surface tpl-border mb-4 rounded-xl border p-3 text-sm">
+              {selected.map((sid) => {
+                const svc = data.services.find((s) => s.id === sid);
+                const sp = specialistFor[sid] ? data.specialists.find((x) => x.id === specialistFor[sid]) : null;
+                return <div key={sid}>{svc?.name}{sp ? ` · ${sp.name}` : ''}</div>;
+              })}
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-sm">
+                  {t('waitlistFrom')}
+                  <input type="date" required value={wlFrom} min={localISODate(data.branch.timezone)} onChange={(e) => setWlFrom(e.target.value)} className="tpl-surface tpl-border mt-1 w-full rounded-lg border px-3 py-2.5" data-testid="wl-from" />
+                </label>
+                <label className="block text-sm">
+                  {t('waitlistTo')}
+                  <input type="date" required value={wlTo} min={wlFrom} onChange={(e) => setWlTo(e.target.value)} className="tpl-surface tpl-border mt-1 w-full rounded-lg border px-3 py-2.5" data-testid="wl-to" />
+                </label>
+              </div>
+              <label className="block text-sm">
+                {t('name')}
+                <input required value={name} onChange={(e) => setName(e.target.value)} autoComplete="given-name" className="tpl-surface tpl-border mt-1 w-full rounded-lg border px-3 py-2.5" data-testid="wl-name" />
+              </label>
+              <label className="block text-sm">
+                {t('phone')}
+                <input required type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 7__ ___ __ __" autoComplete="tel" className="tpl-surface tpl-border mt-1 w-full rounded-lg border px-3 py-2.5" data-testid="wl-phone" />
+              </label>
+              <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} name="website" aria-hidden="true" className="absolute left-[-9999px] h-0 w-0 opacity-0" />
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" required checked={consentPd} onChange={(e) => setConsentPd(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="wl-consent" />
+                <span>{t('consentPd')} (<a href="/legal/privacy" target="_blank" className="underline">↗</a>)</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={consentNotify} onChange={(e) => setConsentNotify(e.target.checked)} className="mt-0.5 h-4 w-4" />
+                <span>{t('consentNotify')}</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={consentWa} onChange={(e) => setConsentWa(e.target.checked)} className="mt-0.5 h-4 w-4" />
+                <span>{t('consentWa')}</span>
+              </label>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setStep('time')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
+              <button type="submit" disabled={busy || !consentPd || !selected.length} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="wl-get-code">{t('getCode')}</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'waitlistOtp' && wl && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void confirmWaitlist();
+            }}
+          >
+            <h1 className="mb-2 text-xl font-semibold">{t('waitlistTitle')}</h1>
+            <p className="tpl-muted mb-4 text-sm">{t('codeSent')} {phone}</p>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="••••••"
+              aria-label={t('code')}
+              className="tpl-surface tpl-border w-full rounded-xl border px-4 py-3 text-center font-mono text-2xl tracking-[0.5em]"
+              data-testid="wl-otp"
+            />
+            <button type="submit" disabled={busy || code.length !== 6} className="tpl-btn mt-4 w-full rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="wl-confirm">{t('waitlistConfirm')}</button>
+            <div className="mt-3 text-sm">
+              <button type="button" onClick={() => void resendWaitlist()} className="tpl-primary underline">{t('resend')}</button>
+            </div>
+          </form>
+        )}
+
+        {step === 'waitlistDone' && (
+          <section className="text-center" data-testid="waitlist-done">
+            <div className="tpl-btn mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full text-3xl">✓</div>
+            <h1 className="text-2xl font-semibold">{wlLeft ? t('waitlistLeft') : t('waitlistDone')}</h1>
+            {!wlLeft && <p className="tpl-muted mt-2 text-sm">{t('waitlistDoneText')}</p>}
+            <div className="tpl-surface tpl-border mt-5 rounded-xl border p-4 text-left text-sm">
+              {selected.map((sid) => <div key={sid}>{data.services.find((s) => s.id === sid)?.name}</div>)}
+              <div className="tpl-muted mt-1">{wlFrom} — {wlTo}</div>
+            </div>
+            <div className="mt-5 flex flex-col items-center gap-3">
+              <Link href={`/${lang}/b/${data.slug}`} className="tpl-btn inline-block rounded-xl px-6 py-3 font-semibold">{t('back')}</Link>
+              {!wlLeft && <button type="button" onClick={() => void leaveWaitlist()} className="tpl-primary text-sm underline">{t('waitlistLeave')}</button>}
             </div>
           </section>
         )}

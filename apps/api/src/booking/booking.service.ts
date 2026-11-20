@@ -146,7 +146,7 @@ export class BookingService {
     };
   }
 
-  private assertSpecialistsValid(ctx: BookingContext, items: RequestItem[]) {
+  assertSpecialistsValid(ctx: BookingContext, items: RequestItem[]) {
     for (const it of items) {
       if (it.specialistId && !ctx.resources.some((r) => r.specialistId === it.specialistId && r.serviceIds.has(it.serviceId))) {
         throw AppError.badRequest('VALIDATION_ERROR', 'Выбранный специалист не оказывает эту услугу в филиале');
@@ -308,7 +308,7 @@ export class BookingService {
   // Общие части транзакций
   // =====================================================================
 
-  private async lockClientKey(tx: Tx, organizationId: string, phone: string) {
+  async lockClientKey(tx: Tx, organizationId: string, phone: string) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`client:${organizationId}:${phone}`}, 0))`;
   }
 
@@ -321,7 +321,7 @@ export class BookingService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`booking-branch:${branchId}`}, 0))`;
   }
 
-  private async findOrCreateClient(tx: Tx, organizationId: string, phone: string, name: string, locale: string) {
+  async findOrCreateClient(tx: Tx, organizationId: string, phone: string, name: string, locale: string) {
     const existing = await tx.client.findFirst({ where: { organizationId, phone, mergedIntoId: null } });
     if (existing) return existing;
     const user = await tx.user.findUnique({ where: { phone }, select: { id: true, phoneVerifiedAt: true } });
@@ -439,6 +439,102 @@ export class BookingService {
 
   private manageUrl(token: string, locale: string) {
     return `${getConfig().PUBLIC_BASE_URL}/${locale}/manage/${token}`;
+  }
+
+  /**
+   * Освободившееся время для листа ожидания (§9). Фиксируется в транзакции отмены/переноса,
+   * подбор клиентов и рассылку предложений выполняет воркер (WaitlistService.processReleases).
+   */
+  private async recordFreedSlot(
+    tx: Tx,
+    a: { id: string; organizationId: string; branchId: string; startAt: Date; endAt: Date },
+    resourceIds: string[],
+    waitlistEnabled: boolean,
+  ) {
+    if (!waitlistEnabled || a.startAt.getTime() <= Date.now() || resourceIds.length === 0) return;
+    await tx.waitlistRelease.create({
+      data: { organizationId: a.organizationId, branchId: a.branchId, sourceAppointmentId: a.id, startAt: a.startAt, endAt: a.endAt, resourceIds: [...new Set(resourceIds)] },
+    });
+  }
+
+  private async activeResourceIds(tx: Tx, appointmentId: string): Promise<string[]> {
+    const rows = await tx.appointmentResource.findMany({ where: { appointmentId, isActive: true }, select: { resourceId: true } });
+    return rows.map((r) => r.resourceId);
+  }
+
+  /**
+   * Запись по предложению из листа ожидания (§9) — сразу confirmed: ссылка с секретным токеном пришла
+   * на номер клиента, владение номером подтверждено так же, как для ссылки управления (D-11).
+   * `guard` выполняется под блокировками клиента и филиала и проверяет, что предложение ещё действует;
+   * `onBooked` в той же транзакции закрывает остальные предложения. Двойное назначение исключают
+   * сериализация филиала, EXCLUDE-ограничение и уникальный индекс принятого предложения.
+   */
+  async createFromWaitlist(
+    args: { branchId: string; clientId: string; startAt: Date; items: RequestItem[]; locale: string; ip: string | null },
+    guard: (tx: Tx) => Promise<void>,
+    onBooked: (tx: Tx, appointmentId: string) => Promise<void>,
+  ) {
+    const branch = await this.prisma.branch.findFirst({ where: { id: args.branchId, archivedAt: null } });
+    if (!branch) throw AppError.notFound('Филиал');
+    const client = await this.prisma.client.findUniqueOrThrow({ where: { id: args.clientId } });
+    const date = AvailabilityService.localDate(args.startAt, branch.timezone);
+    const autoAssign = args.items.some((i) => !i.specialistId);
+    const manageToken = randomToken(32);
+    const appointment = await this.withConflictRetry(
+      () =>
+        this.prisma.$transaction(async (tx) => {
+          const organizationId = branch.organizationId;
+          await this.lockClientKey(tx, organizationId, client.phone);
+          await this.lockBranch(tx, branch.id);
+          await guard(tx);
+          await this.releaseExpiredHolds(tx, { organizationId });
+          const ctx = await this.availability.loadContext(tx, branch.id, date, args.items, { audience: 'public' });
+          const assignment = this.availability.assignmentAt(ctx, args.items, args.startAt, 'public');
+          if (!assignment) throw AppError.slotUnavailable();
+          await this.assertClientLimits(tx, client.id, ctx.settings, new Date(assignment.start), new Date(assignment.end), { skip: false });
+          const plan = await this.priceAssignment(tx, ctx, assignment, { clientId: client.id, lock: false }, new Date());
+          const appt = await tx.appointment.create({
+            data: {
+              organizationId,
+              branchId: branch.id,
+              clientId: client.id,
+              status: 'confirmed',
+              confirmedAt: new Date(),
+              startAt: new Date(assignment.start),
+              endAt: new Date(assignment.end),
+              timezone: branch.timezone,
+              source: 'waitlist',
+              locale: args.locale,
+              baseTotal: plan.baseTotal,
+              saleDiscountTotal: plan.saleDiscountTotal,
+              promoDiscountTotal: plan.promoDiscountTotal,
+              totalPrice: plan.totalPrice,
+              manageTokenHash: sha256(manageToken),
+            },
+          });
+          await this.insertPlan(tx, organizationId, appt.id, plan);
+          await this.history(tx, organizationId, appt.id, null, 'confirmed', { userId: null, actorType: 'client', ip: args.ip, userAgent: null }, 'Запись из листа ожидания');
+          const full = await tx.appointment.findUniqueOrThrow({ where: { id: appt.id }, include: APPOINTMENT_INCLUDE });
+          await this.notifications.enqueue(tx, {
+            organizationId,
+            type: 'appointment_confirmed',
+            eventKey: `appointment:${appt.id}:confirmed`,
+            recipient: client.phone,
+            locale: full.locale,
+            params: this.notificationParams(full, full.branch, {
+              clientName: client.name,
+              services: full.items.map((i) => i.serviceNameSnapshot).join(', '),
+              manageUrl: this.manageUrl(manageToken, full.locale),
+            }),
+            appointmentId: appt.id,
+            clientId: client.id,
+          });
+          await onBooked(tx, appt.id);
+          return this.toView(full, ctx.settings);
+        }),
+      autoAssign,
+    );
+    return { appointment, manageToken };
   }
 
   // =====================================================================
@@ -850,6 +946,7 @@ export class BookingService {
 
           // Старые строки деактивируются и новые вставляются в одной транзакции:
           // если новое время занято (23P01), откатывается всё и старая запись остаётся без изменений.
+          const freedResourceIds = await this.activeResourceIds(tx, appointmentId);
           await tx.appointmentResource.updateMany({ where: { appointmentId, isActive: true }, data: { isActive: false } });
           for (const it of assignment.items) {
             const old = existing.items.find((o) => o.position === it.position)!;
@@ -893,6 +990,7 @@ export class BookingService {
               actorUserId: actor.userId,
             },
           });
+          await this.recordFreedSlot(tx, existing, freedResourceIds, ctx.settings.waitlistEnabled);
           await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder']);
           await this.notifications.enqueue(tx, {
             organizationId: existing.organizationId,
@@ -941,12 +1039,14 @@ export class BookingService {
         data: { status: to, cancelledAt: new Date(), cancelReason: reason ?? null },
       });
       if (r.count !== 1) throw AppError.conflict('Статус записи изменился, обновите страницу');
+      const freedResourceIds = await this.activeResourceIds(tx, appointmentId);
       await tx.appointmentResource.updateMany({ where: { appointmentId }, data: { isActive: false } });
       await tx.bookingHold.updateMany({ where: { appointmentId, releasedAt: null }, data: { releasedAt: new Date(), releaseReason: 'abandoned' } });
       await tx.promotionRedemption.updateMany({ where: { appointmentId }, data: { status: 'released' } });
       await this.history(tx, a.organizationId, appointmentId, a.status, to, actor, reason);
       await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder', 'otp']);
       if (a.status === 'confirmed') {
+        await this.recordFreedSlot(tx, a, freedResourceIds, settings.waitlistEnabled);
         await this.notifications.enqueue(tx, {
           organizationId: a.organizationId,
           type: 'appointment_cancelled',

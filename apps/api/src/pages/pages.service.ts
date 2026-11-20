@@ -475,7 +475,12 @@ export class PagesService {
       availableLocales: LOCALES,
       autoTranslated,
       missingTranslation,
-      availability: { mode: availability.mode, bookingEnabled: availability.bookingEnabled && (branch.bookingSettings?.onlineBookingEnabled ?? true), reason: availability.reason },
+      availability: {
+        mode: availability.mode,
+        bookingEnabled: availability.bookingEnabled && (branch.bookingSettings?.onlineBookingEnabled ?? true),
+        waitlistEnabled: availability.bookingEnabled && (branch.bookingSettings?.onlineBookingEnabled ?? true) && (branch.bookingSettings?.waitlistEnabled ?? false),
+        reason: availability.reason,
+      },
       template: {
         key: tplVersion.template.key,
         layout: config.layout,

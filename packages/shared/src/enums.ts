@@ -76,6 +76,18 @@ export type PromotionKind = (typeof PROMOTION_KINDS)[number];
 export const MULTI_SERVICE_MODES = ['sequential', 'parallel'] as const;
 export type MultiServiceMode = (typeof MULTI_SERVICE_MODES)[number];
 
+/** Лист ожидания (§9). pending_otp — номер ещё не подтверждён. */
+export const WAITLIST_ENTRY_STATUSES = ['pending_otp', 'waiting', 'offered', 'booked', 'cancelled', 'expired'] as const;
+export type WaitlistEntryStatus = (typeof WAITLIST_ENTRY_STATUSES)[number];
+export const WAITLIST_OFFER_STATUSES = ['pending', 'accepted', 'declined', 'expired', 'cancelled', 'lost'] as const;
+export type WaitlistOfferStatus = (typeof WAITLIST_OFFER_STATUSES)[number];
+/** fifo — по времени постановки; priority — сначала приоритет, назначенный администратором, затем время. */
+export const WAITLIST_PRIORITY_MODES = ['fifo', 'priority'] as const;
+export type WaitlistPriorityMode = (typeof WAITLIST_PRIORITY_MODES)[number];
+/** После истечения срока предложений: offer_next — следующим в очереди; release — слот остаётся в общей записи. */
+export const WAITLIST_AFTER_EXPIRY = ['offer_next', 'release'] as const;
+export type WaitlistAfterExpiry = (typeof WAITLIST_AFTER_EXPIRY)[number];
+
 export const REVIEW_STATUSES = ['published', 'hidden'] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 

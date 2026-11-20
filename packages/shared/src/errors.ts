@@ -34,6 +34,10 @@ export const ERROR_CODES = [
   'FILE_INVALID',
   'FILE_TOO_LARGE',
   'REVIEW_NOT_ALLOWED',
+  'WAITLIST_DISABLED',
+  'WAITLIST_LIMIT',
+  'WAITLIST_OFFER_EXPIRED',
+  'WAITLIST_OFFER_CLOSED',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
