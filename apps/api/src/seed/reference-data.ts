@@ -37,7 +37,11 @@ export const BUSINESS_CATEGORIES = [
   ['other', 'Другое', 'Басқа', 'Other'],
 ] as const;
 
-type Tpl = { type: string; category: string; meta: string; vars: string[]; ru: string; kk: string; en: string };
+/**
+ * meta — имя одобренного шаблона Meta. null — обычный текст (category SERVICE): разрешён только как ответ
+ * в 24-часовом окне после сообщения клиента (D-32).
+ */
+type Tpl = { type: string; category: string; meta: string | null; vars: string[]; ru: string; kk: string; en: string };
 export const NOTIFICATION_TEMPLATES: Tpl[] = [
   {
     type: 'otp',
@@ -110,6 +114,33 @@ export const NOTIFICATION_TEMPLATES: Tpl[] = [
     ru: 'Освободилось время в «{{branchName}}»: {{date}} в {{time}}. Забронировать: {{offerUrl}}',
     kk: '«{{branchName}}» мекемесінде уақыт босады: {{date}} {{time}}. Брондау: {{offerUrl}}',
     en: 'A slot opened at "{{branchName}}": {{date}} at {{time}}. Book: {{offerUrl}}',
+  },
+  {
+    type: 'reactivation',
+    category: 'MARKETING',
+    meta: 'reactivation',
+    vars: ['clientName', 'branchName', 'bookingUrl'],
+    ru: '{{clientName}}, давно не виделись! «{{branchName}}» будет рад видеть вас снова. Записаться: {{bookingUrl}}. Чтобы не получать такие сообщения, ответьте СТОП.',
+    kk: '{{clientName}}, көптен бері көрінбедіңіз! «{{branchName}}» сізді қайта күтеді. Жазылу: {{bookingUrl}}. Мұндай хабарламаларды алмау үшін ТОҚТАТУ деп жауап беріңіз.',
+    en: '{{clientName}}, we miss you! "{{branchName}}" would love to see you again. Book: {{bookingUrl}}. Reply STOP to unsubscribe.',
+  },
+  {
+    type: 'whatsapp_auto_reply',
+    category: 'SERVICE',
+    meta: null,
+    vars: [],
+    ru: '{{summary}}\n\nУправление записями: {{cabinetUrl}}\nЭто автоматический ответ: сообщения здесь не читают. По другим вопросам позвоните в филиал.',
+    kk: '{{summary}}\n\nЖазбаларды басқару: {{cabinetUrl}}\nБұл автоматты жауап: мұндағы хабарламалар оқылмайды. Басқа сұрақтар бойынша филиалға қоңырау шалыңыз.',
+    en: '{{summary}}\n\nManage your bookings: {{cabinetUrl}}\nThis is an automatic reply: messages here are not read. For other questions, please call the branch.',
+  },
+  {
+    type: 'marketing_unsubscribed',
+    category: 'SERVICE',
+    meta: null,
+    vars: [],
+    ru: 'Вы отписались от рекламных сообщений. Уведомления о ваших записях будут приходить как прежде.',
+    kk: 'Сіз жарнамалық хабарламалардан бас тарттыңыз. Жазбаларыңыз туралы хабарламалар бұрынғыдай келеді.',
+    en: 'You have unsubscribed from promotional messages. Notifications about your bookings will continue as before.',
   },
 ];
 

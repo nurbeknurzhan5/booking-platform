@@ -89,9 +89,17 @@ function Subscription({ base }: { base: string }) {
 
 function Notifications({ base }: { base: string }) {
   const { t } = useT();
-  const { data, setData } = useApi<{ whatsappEnabled: boolean; smsEnabled: boolean; reminderEnabled: boolean; reviewRequestEnabled: boolean }>(`${base}/notification-settings`);
+  const { data, setData } = useApi<{
+    whatsappEnabled: boolean;
+    smsEnabled: boolean;
+    reminderEnabled: boolean;
+    reviewRequestEnabled: boolean;
+    reactivationEnabled: boolean;
+    reactivationDays: number;
+  }>(`${base}/notification-settings`);
   const log = useApi<Array<{ id: string; type: string; channel: string; recipient: string; status: string; attempts: number; lastError: string | null; createdAt: string }>>(`${base}/notifications`);
   const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   if (!data) return <Spinner />;
   return (
     <div className="space-y-4">
@@ -101,9 +109,43 @@ function Notifications({ base }: { base: string }) {
             <Checkbox key={k} checked={data[k]} onChange={(e) => setData({ ...data, [k]: e.target.checked })} label={t(k)} />
           ))}
         </div>
+        <fieldset className="mt-4 rounded-lg border border-slate-200 p-3">
+          <legend className="px-1 text-sm font-medium">{t('reactivation')}</legend>
+          <Checkbox
+            checked={data.reactivationEnabled}
+            onChange={(e) => setData({ ...data, reactivationEnabled: e.target.checked })}
+            label={t('reactivationEnabled')}
+            data-testid="reactivation-enabled"
+          />
+          <Field label={t('reactivationDays')} hint={t('reactivationHint')} className="mt-2 max-w-xs">
+            <Input
+              type="number"
+              min={30}
+              max={365}
+              value={data.reactivationDays}
+              disabled={!data.reactivationEnabled}
+              onChange={(e) => setData({ ...data, reactivationDays: Number(e.target.value) })}
+              data-testid="reactivation-days"
+            />
+          </Field>
+        </fieldset>
+        {err && <div className="mt-3" data-testid="notification-settings-error"><Alert>{err}</Alert></div>}
         <div className="mt-3 flex items-center justify-end gap-3">
           {msg && <span className="text-sm text-emerald-600">{msg}</span>}
-          <Button onClick={async () => { await api(`${base}/notification-settings`, { method: 'PUT', body: data }); setMsg(t('saved')); }}>{t('save')}</Button>
+          <Button
+            onClick={async () => {
+              setErr(null);
+              setMsg(null);
+              try {
+                await api(`${base}/notification-settings`, { method: 'PUT', body: data });
+                setMsg(t('saved'));
+              } catch (e) {
+                setErr(errorMessage(e));
+              }
+            }}
+          >
+            {t('save')}
+          </Button>
         </div>
       </Card>
       <Card title={t('notifications')}>

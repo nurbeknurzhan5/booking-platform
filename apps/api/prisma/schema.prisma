@@ -1317,6 +1317,7 @@ model NotificationOutbox {
   @@index([organizationId, createdAt])
   @@index([appointmentId])
   @@index([providerMessageId])
+  @@index([recipient, type, createdAt])
   @@map("notification_outbox")
 }
 
@@ -1371,6 +1372,22 @@ model WhatsappMessageStatus {
 
   @@unique([providerMessageId, status])
   @@map("whatsapp_message_statuses")
+}
+
+/// Входящие сообщения WhatsApp (D-32): только факт и принятое действие, текст не хранится.
+/// Уникальный id сообщения Meta — повторная доставка webhook не даёт второго ответа. Хранится 30 дней.
+model WhatsappInboundMessage {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerMessageId String   @unique @map("provider_message_id") @db.VarChar(200)
+  phone             String   @db.VarChar(20)
+  messageType       String   @map("message_type") @db.VarChar(30)
+  /// auto_reply | unsubscribe | throttled | ignored
+  action            String   @db.VarChar(20)
+  receivedAt        DateTime @map("received_at") @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([phone, createdAt])
+  @@map("whatsapp_inbound_messages")
 }
 
 /// Канал dev_inbox: только для dev/test (запрещён в production конфигурацией).

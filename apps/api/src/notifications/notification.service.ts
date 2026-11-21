@@ -32,7 +32,12 @@ export interface EnqueueArgs {
 export interface ConsentState {
   notifications: boolean;
   whatsapp: boolean;
+  /** Рекламные сообщения: по умолчанию нет (D-34). */
+  marketing: boolean;
 }
+
+/** Ответы на сообщение клиента (D-32): только WhatsApp, в 24-часовом окне, без проверки согласий на рассылки. */
+const REPLY_TYPES: ReadonlySet<NotificationType> = new Set(['whatsapp_auto_reply', 'marketing_unsubscribed']);
 
 /**
  * Постановка уведомлений в Outbox. Вызывается в транзакции бизнес-операции,
@@ -56,11 +61,20 @@ export class NotificationService {
   /** Выбор канала по типу сообщения, настройкам организации и согласиям клиента. */
   selectChannel(
     type: NotificationType,
-    orgSettings: { whatsappEnabled: boolean; smsEnabled: boolean },
+    orgSettings: { whatsappEnabled: boolean; smsEnabled: boolean; reactivationEnabled?: boolean },
     consent: ConsentState,
   ): NotificationChannel | null {
     const enabled = this.enabledChannels();
+    if (type === 'reactivation') {
+      // Рекламное сообщение: только WhatsApp, только с согласиями на рекламу, уведомления и WhatsApp.
+      // Проверяется и в тестовой среде (dev_inbox), чтобы тесты подтверждали правило.
+      if (!orgSettings.reactivationEnabled || !orgSettings.whatsappEnabled) return null;
+      if (!consent.marketing || !consent.notifications || !consent.whatsapp) return null;
+      if (enabled.includes('dev_inbox')) return 'dev_inbox';
+      return enabled.includes('whatsapp') ? 'whatsapp' : null;
+    }
     if (enabled.includes('dev_inbox')) return 'dev_inbox';
+    if (REPLY_TYPES.has(type)) return enabled.includes('whatsapp') ? 'whatsapp' : null;
     if (type === 'otp') {
       const order = getConfig().OTP_CHANNELS.length ? getConfig().OTP_CHANNELS : ['whatsapp', 'sms'];
       return (order.find((c) => enabled.includes(c as NotificationChannel)) as NotificationChannel | undefined) ?? null;
@@ -84,12 +98,12 @@ export class NotificationService {
   /** Текущие согласия по номеру (последняя запись по типу). */
   async consentFor(tx: Tx, phone: string, organizationId: string | null): Promise<ConsentState> {
     const rows = await tx.clientConsent.findMany({
-      where: { phone, consentType: { in: ['notifications', 'whatsapp'] }, OR: [{ organizationId }, { organizationId: null }] },
+      where: { phone, consentType: { in: ['notifications', 'whatsapp', 'marketing'] }, OR: [{ organizationId }, { organizationId: null }] },
       orderBy: { createdAt: 'desc' },
       select: { consentType: true, granted: true },
     });
     const latest = (t: string) => rows.find((r) => r.consentType === t)?.granted;
-    return { notifications: latest('notifications') ?? true, whatsapp: latest('whatsapp') ?? true };
+    return { notifications: latest('notifications') ?? true, whatsapp: latest('whatsapp') ?? true, marketing: latest('marketing') ?? false };
   }
 
   /**
@@ -98,10 +112,13 @@ export class NotificationService {
    */
   async enqueue(tx: Tx, args: EnqueueArgs): Promise<string | null> {
     // Для OTP настройки организации не влияют на канал — лишний запрос не нужен (OTP создаётся под блокировкой филиала).
-    const orgSettings = args.type === 'otp' ? DEFAULT_NOTIFICATION_SETTINGS : await this.orgNotificationSettings(tx, args.organizationId);
+    const noOrgSettings = args.type === 'otp' || REPLY_TYPES.has(args.type);
+    const orgSettings = noOrgSettings ? DEFAULT_NOTIFICATION_SETTINGS : await this.orgNotificationSettings(tx, args.organizationId);
     if (args.type === 'appointment_reminder' && !orgSettings.reminderEnabled) return null;
     if (args.type === 'review_request' && !orgSettings.reviewRequestEnabled) return null;
-    const consent = args.type === 'otp' ? { notifications: true, whatsapp: true } : await this.consentFor(tx, args.recipient, args.organizationId);
+    const consent = noOrgSettings
+      ? { notifications: true, whatsapp: true, marketing: false }
+      : await this.consentFor(tx, args.recipient, args.organizationId);
     const channel = args.forceChannel ?? this.selectChannel(args.type, orgSettings, consent);
     if (!channel) return null;
 

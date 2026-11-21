@@ -62,6 +62,8 @@ test('клиент записывается, переносит и отменя�
   await page.getByTestId('name').fill('Тест Клиент');
   await page.getByTestId('phone').fill(phone);
   await page.getByTestId('consent').check();
+  // согласие на рекламные сообщения — только по явной отметке (D-34)
+  await expect(page.getByTestId('consent-marketing')).not.toBeChecked();
   await page.waitForTimeout(1600); // антибот: форма не может быть отправлена мгновенно
   await page.getByTestId('get-code').click();
 

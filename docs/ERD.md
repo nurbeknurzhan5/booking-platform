@@ -1,6 +1,6 @@
 # Модель данных (ERD)
 
-Полная схема описана в `apps/api/prisma/schema.prisma`: 55 таблиц. Ограничения, которые Prisma не выражает, добавлены ручными миграциями `prisma/migrations/*_constraints` и `*_review_merge`.
+Полная схема описана в `apps/api/prisma/schema.prisma`: 56 таблиц. Ограничения, которые Prisma не выражает, добавлены ручными миграциями `prisma/migrations/*_constraints` и `*_review_merge`.
 
 ## Основные связи
 
@@ -65,6 +65,7 @@ erDiagram
 | `clients_active_phone_unique`: `EXCLUDE (organization_id =, phone =) WHERE merged_into_id IS NULL` | Одна активная карточка на номер в организации |
 | `notification_outbox.dedupe_key UNIQUE`, `notification_events.dedupe_key UNIQUE` | Уведомления не дублируются |
 | `whatsapp_message_statuses (provider_message_id, status) UNIQUE` | Повторная доставка webhook не создаёт дублей |
+| `whatsapp_inbound_messages.provider_message_id UNIQUE`, CHECK `action` | Одно входящее сообщение — не больше одного автоответа (D-32); текст не хранится |
 | `idempotency_keys (scope, key) UNIQUE` | Идемпотентность API |
 | `branches.slug UNIQUE` | Постоянная ссылка страницы |
 | `promotions (organization_id, code) UNIQUE` | Уникальность промокода |
@@ -86,7 +87,7 @@ erDiagram
 - Клиенты обезличиваются (`anonymized_at`: имя «Удалённый клиент», телефон заменяется). История визитов сохраняется без персональных данных.
 - Журналы (оплаты, история подписок, аудит, статусы записей, переносы, согласия, публикации) — append-only.
 - Каскадное удаление разрешено только для служебных зависимых строк: сессии пользователя, позиции черновика, права доступа к филиалу.
-- Очистку технических данных выполняет воркер ежечасно: истёкшие сессии (через 24 ч после истечения), OTP старше 7 дней, ключи идемпотентности старше 48 ч, счётчики rate limit.
+- Очистку технических данных выполняет воркер ежечасно: истёкшие сессии (через 24 ч после истечения), OTP старше 7 дней, ключи идемпотентности старше 48 ч, счётчики rate limit, журнал входящих WhatsApp старше 30 дней.
 
 ## Время и деньги
 

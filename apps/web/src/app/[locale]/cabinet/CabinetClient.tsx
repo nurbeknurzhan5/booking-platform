@@ -206,6 +206,7 @@ export function CabinetClient({ lang }: { lang: string }) {
             <legend className="font-medium">{t('notifications')}</legend>
             <label className="flex gap-2"><input type="checkbox" checked={profile.consents.notifications} onChange={(e) => setProfile({ ...profile, consents: { ...profile.consents, notifications: e.target.checked } })} />{t('consentNotify')}</label>
             <label className="flex gap-2"><input type="checkbox" checked={profile.consents.whatsapp} onChange={(e) => setProfile({ ...profile, consents: { ...profile.consents, whatsapp: e.target.checked } })} />{t('consentWa')}</label>
+            <label className="flex gap-2"><input type="checkbox" checked={profile.consents.marketing} onChange={(e) => setProfile({ ...profile, consents: { ...profile.consents, marketing: e.target.checked } })} data-testid="cabinet-marketing" />{t('consentMarketingAll')}</label>
           </fieldset>
           <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white">{t('save')}</button>
           {savedMsg && <span className="ml-3 text-sm text-emerald-600">{t('saved')}</span>}

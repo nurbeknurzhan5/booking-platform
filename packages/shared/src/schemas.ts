@@ -309,6 +309,8 @@ export const CreateHoldSchema = z.object({
     personalData: z.literal(true, { error: 'Требуется согласие на обработку персональных данных' }),
     notifications: z.boolean().default(true),
     whatsapp: z.boolean().default(true),
+    /** Рекламные сообщения (D-34). Отметка — новое согласие; без отметки прежнее решение клиента не меняется. */
+    marketing: z.boolean().default(false),
   }),
   comment: z.string().max(1000).optional(),
   utm: UtmSchema.optional(),
@@ -637,15 +639,24 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   defaultGraceDays: 7,
 };
 
+/** Реактивация не раньше чем через 30 дней после визита и не чаще 1 раза в 30 дней на номер (D-34). */
+export const REACTIVATION_MIN_DAYS = 30;
+export const REACTIVATION_COOLDOWN_DAYS = 30;
+
 export const NotificationSettingsSchema = z.object({
   whatsappEnabled: z.boolean(),
   smsEnabled: z.boolean(),
   reminderEnabled: z.boolean(),
   reviewRequestEnabled: z.boolean(),
+  /** Реактивация (§15.1, D-34): сообщение клиенту через N дней после последнего визита. Только с согласием marketing. */
+  reactivationEnabled: z.boolean().default(false),
+  reactivationDays: z.number().int().min(REACTIVATION_MIN_DAYS).max(365).default(60),
 });
 export const DEFAULT_NOTIFICATION_SETTINGS: z.infer<typeof NotificationSettingsSchema> = {
   whatsappEnabled: true,
   smsEnabled: false,
   reminderEnabled: true,
   reviewRequestEnabled: true,
+  reactivationEnabled: false,
+  reactivationDays: 60,
 };

@@ -6,6 +6,7 @@ import { Public, RateLimit } from '../common/decorators';
 import { PrismaService } from '../common/prisma.service';
 import { getConfig } from '../config/config';
 import { AppError } from '../common/errors';
+import { WhatsAppInboundService, type WaInboundMessage } from './whatsapp-inbound.service';
 
 interface WaStatus {
   id: string;
@@ -22,12 +23,21 @@ export function verifyMetaSignature(rawBody: Buffer, header: string | undefined,
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-/** Webhook WhatsApp Cloud API: подтверждение подписки и статусы доставки (§15.2). */
+interface WaValue {
+  metadata?: { phone_number_id?: string };
+  statuses?: WaStatus[];
+  messages?: WaInboundMessage[];
+}
+
+/** Webhook WhatsApp Cloud API: подтверждение подписки, статусы доставки (§15.2), входящие сообщения (D-32). */
 @ApiExcludeController()
 @Public()
 @Controller('integrations/whatsapp/webhook')
 export class WhatsAppWebhookController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inbound: WhatsAppInboundService,
+  ) {}
 
   @Get()
   verify(@Query('hub.mode') mode: string, @Query('hub.verify_token') token: string, @Query('hub.challenge') challenge: string, @Res() res: Response) {
@@ -47,10 +57,24 @@ export class WhatsAppWebhookController {
     if (!raw || !verifyMetaSignature(raw, req.headers['x-hub-signature-256'] as string | undefined, getConfig().WHATSAPP_APP_SECRET)) {
       throw AppError.forbidden('Invalid signature');
     }
-    const body = req.body as { entry?: Array<{ changes?: Array<{ value?: { statuses?: WaStatus[] } }> }> };
-    const statuses = (body.entry ?? []).flatMap((e) => (e.changes ?? []).flatMap((c) => c.value?.statuses ?? []));
-    for (const s of statuses) await this.applyStatus(s);
-    return { received: statuses.length };
+    const body = req.body as { entry?: Array<{ changes?: Array<{ field?: string; value?: WaValue }> }> };
+    const values = (body.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => c.value ?? {}));
+    const ownNumber = getConfig().WHATSAPP_PHONE_NUMBER_ID;
+    let statuses = 0;
+    let messages = 0;
+    for (const v of values) {
+      for (const s of v.statuses ?? []) {
+        await this.applyStatus(s);
+        statuses++;
+      }
+      // Входящие — только для номера платформы (в одном приложении Meta может быть несколько номеров).
+      if (v.metadata?.phone_number_id && ownNumber && v.metadata.phone_number_id !== ownNumber) continue;
+      for (const m of v.messages ?? []) {
+        await this.inbound.handle(m);
+        messages++;
+      }
+    }
+    return { received: statuses, messages };
   }
 
   /** Идемпотентно: уникальная пара (message id, status); повторная доставка webhook ничего не дублирует. */

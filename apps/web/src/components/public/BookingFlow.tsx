@@ -68,6 +68,8 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
   const [consentPd, setConsentPd] = useState(false);
   const [consentNotify, setConsentNotify] = useState(true);
   const [consentWa, setConsentWa] = useState(true);
+  // Рекламные сообщения (D-34): только по явной отметке, по умолчанию выключено.
+  const [consentMarketing, setConsentMarketing] = useState(false);
   const [website, setWebsite] = useState(''); // honeypot
   const [quote, setQuote] = useState<Quote | null>(null);
   const [hold, setHold] = useState<HoldResponse | null>(null);
@@ -122,7 +124,7 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
           client: { name: name.trim(), phone },
           promoCode: appliedPromo,
           locale: lang,
-          consents: { personalData: consentPd, notifications: consentNotify, whatsapp: consentWa },
+          consents: { personalData: consentPd, notifications: consentNotify, whatsapp: consentWa, marketing: consentMarketing },
           comment: comment.trim() || undefined,
           utm: savedUtm(),
           visitorSession: analyticsSession() || undefined,
@@ -534,6 +536,10 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={consentWa} onChange={(e) => setConsentWa(e.target.checked)} className="mt-0.5 h-4 w-4" />
                 <span>{t('consentWa')}</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" checked={consentMarketing} onChange={(e) => setConsentMarketing(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="consent-marketing" />
+                <span>{t('consentMarketing')}</span>
               </label>
             </div>
             <Summary />

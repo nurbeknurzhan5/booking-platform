@@ -11,6 +11,8 @@ import { OtpService } from '../auth/otp.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { TranslationService } from '../pages/translation.service';
 import { WaitlistService } from '../booking/waitlist.service';
+import { ReactivationService } from '../notifications/reactivation.service';
+import { WhatsAppInboundService } from '../notifications/whatsapp-inbound.service';
 
 interface Task {
   name: string;
@@ -45,6 +47,8 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
     private readonly analytics: AnalyticsService,
     private readonly translations: TranslationService,
     private readonly waitlist: WaitlistService,
+    private readonly reactivation: ReactivationService,
+    private readonly inbound: WhatsAppInboundService,
   ) {}
 
   tasks(): Task[] {
@@ -56,6 +60,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
       { name: 'analytics', intervalMs: 10 * 60_000, singleton: true, run: () => this.analytics.aggregateRecent() },
       { name: 'translations', intervalMs: 30_000, singleton: true, run: () => this.translations.processQueue() },
       { name: 'waitlist', intervalMs: 20_000, singleton: true, run: () => this.waitlist.processReleases() },
+      { name: 'reactivation', intervalMs: 30 * 60_000, singleton: true, run: () => this.reactivation.enqueueDue() },
       {
         name: 'cleanup',
         intervalMs: 60 * 60_000,
@@ -65,6 +70,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
           await this.idempotency.cleanup();
           await this.sessions.cleanupExpired();
           await this.otp.cleanup();
+          await this.inbound.cleanup();
         },
       },
     ];

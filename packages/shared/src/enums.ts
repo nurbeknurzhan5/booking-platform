@@ -49,6 +49,11 @@ export const NOTIFICATION_TYPES = [
   'appointment_completed',
   'review_request',
   'waitlist_offer',
+  /** Реактивация клиента без визитов (§15.1, D-34): маркетинговая категория Meta, нужно согласие marketing. */
+  'reactivation',
+  /** Ответ на входящее сообщение в 24-часовом окне (D-32): обычный текст, не шаблон. */
+  'whatsapp_auto_reply',
+  'marketing_unsubscribed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

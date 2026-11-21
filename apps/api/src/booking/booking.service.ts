@@ -574,6 +574,8 @@ export class BookingService {
             ['personal_data', true],
             ['notifications', input.consents.notifications],
             ['whatsapp', input.consents.whatsapp],
+            // Без отметки прежнее решение клиента о рекламе не меняется (отзыв — в кабинете или ответом СТОП).
+            ...(input.consents.marketing ? [['marketing', true] as [string, boolean]] : []),
           ];
           await tx.clientConsent.createMany({
             data: consents.map(([consentType, granted]) => ({

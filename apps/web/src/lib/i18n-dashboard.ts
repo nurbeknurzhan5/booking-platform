@@ -207,6 +207,11 @@ const ru = {
   smsEnabled: 'SMS',
   reminderEnabled: 'Напоминания',
   reviewRequestEnabled: 'Запрос отзыва',
+  reactivation: 'Реактивация клиентов',
+  reactivationEnabled: 'Напоминать клиентам о повторном визите в WhatsApp',
+  reactivationDays: 'Через сколько дней после визита, дней',
+  reactivationHint:
+    'От 30 до 365. Одно сообщение после последнего визита, если нет новых записей; только клиентам с согласием на рекламу; с 10:00 до 20:00; не чаще раза в 30 дней. Нужен одобренный шаблон Meta «reactivation» (категория MARKETING).',
   // админ
   admin: 'Администрирование платформы',
   organizations: 'Организации',
@@ -461,6 +466,11 @@ const kk: Dict = {
   smsEnabled: 'SMS',
   reminderEnabled: 'Еске салулар',
   reviewRequestEnabled: 'Пікір сұрау',
+  reactivation: 'Клиенттерді қайта тарту',
+  reactivationEnabled: 'Клиенттерге WhatsApp арқылы қайта келу туралы еске салу',
+  reactivationDays: 'Сапардан кейін неше күннен соң, күн',
+  reactivationHint:
+    '30-дан 365-ке дейін. Соңғы сапардан кейін бір хабарлама, егер жаңа жазба болмаса; тек жарнамаға келісім берген клиенттерге; 10:00–20:00 аралығында; 30 күнде бір реттен жиі емес. Meta мақұлдаған «reactivation» үлгісі қажет (MARKETING санаты).',
   admin: 'Платформаны басқару',
   organizations: 'Ұйымдар',
   owners: 'Иелер',

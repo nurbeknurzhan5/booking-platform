@@ -19,6 +19,8 @@ import { MeWaitlistController, PublicWaitlistController, StaffWaitlistController
 import { NotificationDispatcher } from './notifications/dispatcher.service';
 import { DevInboxChannel, SmsChannel, WhatsAppChannel } from './notifications/channels';
 import { WhatsAppWebhookController } from './notifications/whatsapp-webhook.controller';
+import { WhatsAppInboundService } from './notifications/whatsapp-inbound.service';
+import { ReactivationService } from './notifications/reactivation.service';
 import { AdminNotificationsController, DevInboxController, OrgNotificationsController } from './notifications/notifications.controller';
 import { JobsService } from './common/jobs.service';
 import { AnalyticsService } from './analytics/analytics.service';
@@ -77,6 +79,8 @@ import { PagesController } from './pages/pages.controller';
     WaitlistService,
     RemindersService,
     NotificationDispatcher,
+    WhatsAppInboundService,
+    ReactivationService,
     WhatsAppChannel,
     SmsChannel,
     DevInboxChannel,
@@ -99,6 +103,8 @@ import { PagesController } from './pages/pages.controller';
     WaitlistService,
     RemindersService,
     NotificationDispatcher,
+    WhatsAppInboundService,
+    ReactivationService,
     AnalyticsService,
     TranslationService,
     JobsService,

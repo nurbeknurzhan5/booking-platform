@@ -7,7 +7,7 @@ Multi-tenant платформа для салонов красоты, барбе
 - публичные страницы филиалов на ru/kk/en с шаблонами;
 - кабинеты клиента, администратора, владельца и суперадминистратора;
 - подписки;
-- уведомления через официальный WhatsApp Business Platform;
+- уведомления через официальный WhatsApp Business Platform, автоответ на входящие сообщения о записях, автоматическая реактивация клиентов (с согласием на рекламу и отпиской «СТОП»);
 - аналитика с UTM.
 
 Основание: [ТЗ.txt](ТЗ.txt) (версия 4.0). Ход работ: [docs/PROGRESS.md](docs/PROGRESS.md).
@@ -52,8 +52,8 @@ npm run dev:web      # http://localhost:3000
 ## Проверки
 
 ```bash
-npm test              # 126 unit + integration тестов (нужна БД booking_test)
-npm run test:e2e      # 8 E2E (Playwright, десктоп + мобильный), при запущенных api/worker/web
+npm test              # 134 unit + integration теста (нужна БД booking_test)
+npm run test:e2e      # 10 E2E (Playwright, десктоп + мобильный), при запущенных api/worker/web
 npm run lint
 npm run typecheck
 node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8

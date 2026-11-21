@@ -48,7 +48,8 @@ async function http(url: string, init: RequestInit, timeoutMs = 10_000): Promise
 
 /**
  * WhatsApp Business Platform — официальный Cloud API Meta (§15).
- * Отправляются только одобренные шаблоны (бизнес-инициированные сообщения вне 24-часового окна).
+ * Сообщения по инициативе бизнеса — только одобренные шаблоны. Обычный текст — только ответ клиенту
+ * в 24-часовом окне после его сообщения (категория SERVICE, D-32).
  */
 @Injectable()
 export class WhatsAppChannel implements ChannelAdapter {
@@ -63,6 +64,17 @@ export class WhatsAppChannel implements ChannelAdapter {
   private static readonly PERMANENT_CODES = new Set([100, 131008, 131009, 131021, 131026, 131047, 131051, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 190, 10, 200]);
 
   buildPayload(msg: OutgoingMessage) {
+    if (msg.category === 'SERVICE' && !msg.providerTemplateName) {
+      // Ответ клиенту в 24-часовом окне после его сообщения (D-32): обычный текст без шаблона.
+      // Вне окна Meta отклонит сообщение (131047) — ошибка неповторяемая.
+      return {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: msg.recipient.replace(/^\+/, ''),
+        type: 'text',
+        text: { preview_url: false, body: msg.text.slice(0, 4096) },
+      };
+    }
     if (!msg.providerTemplateName) throw new ChannelError('Шаблон WhatsApp не задан', false, 'NO_TEMPLATE');
     const bodyParams = msg.templateVariables.map((v) => ({ type: 'text', text: msg.params[v] ?? '' }));
     const components: unknown[] = [{ type: 'body', parameters: bodyParams }];
