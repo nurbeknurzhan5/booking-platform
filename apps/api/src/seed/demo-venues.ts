@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import type { PrismaClient, ResourceType } from '../generated/prisma/client';
 import { StorageService } from '../files/storage.service';
-import { bathCover, clubCover, consoleRoom, finnishSauna, hammam, pcSetup, russianBanya } from './demo-art';
+import { bathCover, beautySalon, clubCover, consoleRoom, finnishSauna, hammam, massageRoom, pcSetup, russianBanya } from './demo-art';
 
 /** Демо-площадки для показа (разработка): компьютерный клуб и банный комплекс. Идемпотентно по slug. */
 export const DEMO_VENUES = {
@@ -130,8 +130,45 @@ async function seedVenue(prisma: PrismaClient, spec: VenueSpec) {
   await prisma.publicPage.update({ where: { id: page.id }, data: { publishedPublicationId: pub.id } });
 }
 
+/**
+ * Обложка и галерея для основного демо-салона (demo-salon из demo-data): добавляются один раз, если у страницы
+ * ещё нет обложки. Меняется черновик; публикация неизменяема — выпускается следующая версия.
+ */
+async function decorateDemoSalon(prisma: PrismaClient) {
+  const branch = await prisma.branch.findUnique({ where: { slug: 'demo-salon' }, include: { page: { include: { draft: true } } } });
+  const page = branch?.page;
+  const draft = page?.draft;
+  if (!branch || !page || !draft) return;
+  const content = (draft.content ?? {}) as Record<string, unknown>;
+  let pics = content.coverAssetId ? { cover: content.coverAssetId as string, gallery: (content.galleryAssetIds as string[] | undefined) ?? [] } : null;
+  if (!pics) {
+    const storage = new StorageService();
+    const cover = await image(prisma, storage, branch.organizationId, 'cover', beautySalon());
+    const gallery = [await image(prisma, storage, branch.organizationId, 'gallery', beautySalon()), await image(prisma, storage, branch.organizationId, 'gallery', massageRoom())];
+    pics = { cover, gallery: [...((content.galleryAssetIds as string[] | undefined) ?? []), ...gallery] };
+    await prisma.pageDraft.update({ where: { id: draft.id }, data: { content: { ...content, coverAssetId: pics.cover, galleryAssetIds: pics.gallery } } });
+  }
+  if (page.publishedPublicationId) {
+    const pub = await prisma.pagePublication.findUnique({ where: { id: page.publishedPublicationId } });
+    const pc = (pub?.content ?? {}) as Record<string, unknown>;
+    if (pub && !pc.coverAssetId) {
+      // публикации неизменяемы (append-only): выпускаем следующую версию с картинками
+      const last = await prisma.pagePublication.findFirst({ where: { pageId: page.id }, orderBy: { version: 'desc' }, select: { version: true } });
+      const next = await prisma.pagePublication.create({
+        data: {
+          organizationId: pub.organizationId, pageId: pub.pageId, version: (last?.version ?? 0) + 1, content: { ...pc, coverAssetId: pics.cover, galleryAssetIds: pics.gallery },
+          translations: pub.translations ?? {}, templateId: pub.templateId, templateVersionId: pub.templateVersionId, colorScheme: pub.colorScheme,
+          bookingButtonPosition: pub.bookingButtonPosition, primaryLocale: pub.primaryLocale, publishedByUserId: pub.publishedByUserId,
+        },
+      });
+      await prisma.publicPage.update({ where: { id: page.id }, data: { publishedPublicationId: next.id } });
+    }
+  }
+}
+
 export async function seedDemoVenues(prisma: PrismaClient): Promise<void> {
   if ((process.env.APP_ENV ?? 'development') === 'production') throw new Error('Demo seed is disabled in production');
+  await decorateDemoSalon(prisma);
   await seedVenue(prisma, {
     slug: DEMO_VENUES.club.slug,
     ownerEmail: DEMO_VENUES.club.ownerEmail,
@@ -143,8 +180,8 @@ export async function seedDemoVenues(prisma: PrismaClient): Promise<void> {
       title: 'Компьютерный клуб «Пиксель»',
       tagline: 'Мощные ПК и PlayStation 5 — займите место онлайн, без звонков',
       about: 'Открыты каждый день с 10:00 до 24:00. Игровые места с RTX 4060 и RTX 4080, мониторы 165–240 Гц, отдельные залы PlayStation 5 с диванами.\nПриходите командой — забронируйте несколько мест на одно время.',
-      template: 'bold',
-      scheme: 'night',
+      template: 'neon',
+      scheme: 'cyber',
       button: 'floating',
       cover: 'club',
       gallery: ['pc', 'vip', 'ps'],
@@ -176,8 +213,8 @@ export async function seedDemoVenues(prisma: PrismaClient): Promise<void> {
       title: 'Банный комплекс «Тёплый берег»',
       tagline: 'Финская сауна, русская баня на дровах и хаммам — бронируйте зал онлайн',
       about: 'Каждый зал — отдельный: парная, комната отдыха, душ, полотенца и тапочки включены.\nМожно заказать парение с вениками у нашего пармейстера.',
-      template: 'classic',
-      scheme: 'ivory',
+      template: 'warm',
+      scheme: 'amber',
       button: 'floating',
       cover: 'bath',
       gallery: ['finnish', 'banya', 'hammam'],

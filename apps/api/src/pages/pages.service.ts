@@ -507,6 +507,7 @@ export class PagesService {
       template: {
         key: tplVersion.template.key,
         layout: config.layout,
+        style: config.style ?? null,
         sectionOrder: withResourcesSection(config.sectionOrder).filter((s) => !src.content.hiddenSections.includes(s)),
         colors: scheme,
         bookingButtonPosition: src.bookingButtonPosition,

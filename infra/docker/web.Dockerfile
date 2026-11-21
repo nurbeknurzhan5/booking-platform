@@ -21,6 +21,8 @@ WORKDIR /app
 RUN groupadd -r app && useradd -r -g app app
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+# статические файлы (скриншоты и иллюстрации главной страницы)
+COPY --from=build /app/apps/web/public ./apps/web/public
 USER app
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]

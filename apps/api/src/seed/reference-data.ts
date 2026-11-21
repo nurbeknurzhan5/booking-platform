@@ -212,6 +212,78 @@ export const PAGE_TEMPLATES: Array<{ key: string; name: string; description: str
   },
 ];
 
+/** Темы магазина оформлений (задача 23): добавляются при загрузке справочников, если их ещё нет. */
+const THEMES_V2: Array<{ key: string; name: string; description: string; config: TemplateConfig }> = [
+  {
+    key: 'neon',
+    name: 'Неон',
+    description: 'Тёмная тема с неоновой подсветкой — для компьютерных клубов, VR и игровых залов',
+    config: {
+      layout: 'neon',
+      style: { font: 'mono', hero: 'cover', cards: 'glass', radius: 'xl' },
+      tags: ['computer_club', 'other'],
+      sectionOrder: ['hero', 'resources', 'services', 'promotions', 'gallery', 'reviews', 'about', 'schedule', 'contacts', 'map', 'socials'],
+      colorSchemes: [
+        { key: 'cyber', name: 'Кибер', primary: '#22d3ee', accent: '#e879f9', background: '#070512', surface: '#120d26', text: '#eef2ff' },
+        { key: 'toxic', name: 'Токсик', primary: '#a3e635', accent: '#22d3ee', background: '#05080a', surface: '#0f171a', text: '#f0fdf4' },
+        { key: 'magenta', name: 'Маджента', primary: '#f472b6', accent: '#facc15', background: '#0c0612', surface: '#1a0f22', text: '#fdf4ff' },
+      ],
+      bookingButtonPositions: ['floating', 'header', 'after_services', 'bottom'],
+    },
+  },
+  {
+    key: 'warm',
+    name: 'Тепло',
+    description: 'Мягкие тёплые оттенки и крупные фото — для бань, саун, спа и массажа',
+    config: {
+      layout: 'warm',
+      style: { font: 'serif', hero: 'cover', cards: 'shadow', radius: '2xl' },
+      tags: ['bath_sauna', 'massage', 'wellness', 'cosmetology'],
+      sectionOrder: ['hero', 'about', 'resources', 'services', 'specialists', 'gallery', 'promotions', 'reviews', 'schedule', 'contacts', 'map', 'socials'],
+      colorSchemes: [
+        { key: 'amber', name: 'Янтарь', primary: '#b45309', accent: '#f59e0b', background: '#fbf6ef', surface: '#ffffff', text: '#3b2412' },
+        { key: 'cedar', name: 'Кедр', primary: '#7c2d12', accent: '#d97706', background: '#f7efe6', surface: '#fffaf3', text: '#2b1a10' },
+        { key: 'eucalyptus', name: 'Эвкалипт', primary: '#3f6b4f', accent: '#c08a3e', background: '#f3f5ef', surface: '#ffffff', text: '#1f2a22' },
+      ],
+      bookingButtonPositions: ['floating', 'header', 'after_services', 'bottom'],
+    },
+  },
+  {
+    key: 'luxe',
+    name: 'Люкс',
+    description: 'Строгая премиальная подача с золотыми акцентами — для салонов красоты и косметологии',
+    config: {
+      layout: 'luxe',
+      style: { font: 'serif', hero: 'cover', cards: 'outline', radius: 'none' },
+      tags: ['beauty_salon', 'cosmetology', 'barbershop'],
+      sectionOrder: ['hero', 'about', 'services', 'specialists', 'gallery', 'reviews', 'promotions', 'schedule', 'contacts', 'map', 'socials'],
+      colorSchemes: [
+        { key: 'noir', name: 'Нуар', primary: '#c9a24a', accent: '#e7cf8f', background: '#0b0b0c', surface: '#161618', text: '#f4f1ea' },
+        { key: 'pearl', name: 'Жемчуг', primary: '#8a6d3b', accent: '#c9a24a', background: '#faf8f4', surface: '#ffffff', text: '#1c1a17' },
+        { key: 'bordeaux', name: 'Бордо', primary: '#7f1d3a', accent: '#c9a24a', background: '#fbf7f8', surface: '#ffffff', text: '#2a0f18' },
+      ],
+      bookingButtonPositions: ['header', 'floating', 'after_services'],
+    },
+  },
+  {
+    key: 'fresh',
+    name: 'Свежесть',
+    description: 'Чистая яркая тема с акцентом на услуги и цены — для автомоек, детейлинга и автосервисов',
+    config: {
+      layout: 'fresh',
+      style: { font: 'display', hero: 'split', cards: 'shadow', radius: 'xl' },
+      tags: ['car_wash', 'detailing', 'car_service'],
+      sectionOrder: ['hero', 'services', 'promotions', 'resources', 'specialists', 'gallery', 'reviews', 'schedule', 'contacts', 'map', 'socials'],
+      colorSchemes: [
+        { key: 'aqua', name: 'Аква', primary: '#0284c7', accent: '#22c55e', background: '#f0f9ff', surface: '#ffffff', text: '#0c1f2e' },
+        { key: 'graphite', name: 'Графит', primary: '#2563eb', accent: '#f97316', background: '#f4f6f8', surface: '#ffffff', text: '#111827' },
+        { key: 'lime', name: 'Лайм', primary: '#16a34a', accent: '#0ea5e9', background: '#f6fdf7', surface: '#ffffff', text: '#0f1f14' },
+      ],
+      bookingButtonPositions: ['floating', 'header', 'after_services', 'bottom'],
+    },
+  },
+];
+
 export const DEFAULT_PLANS = [
   { code: 'start', name: 'Старт', description: '1 филиал', maxBranches: 1, monthlyPrice: 15000 },
   { code: 'business', name: 'Бизнес', description: 'до 3 филиалов', maxBranches: 3, monthlyPrice: 35000 },
@@ -272,7 +344,7 @@ export async function seedReferenceData(prisma: PrismaClient): Promise<void> {
       }
     }
   }
-  for (const [i, t] of PAGE_TEMPLATES.entries()) {
+  for (const [i, t] of [...PAGE_TEMPLATES, ...THEMES_V2].entries()) {
     const existing = await prisma.pageTemplate.findUnique({ where: { key: t.key } });
     if (existing) continue;
     const tpl = await prisma.pageTemplate.create({

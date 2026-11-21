@@ -24,6 +24,7 @@ import {
   UpdateServiceSchema,
   UpdateSpecialistSchema,
   ServiceInputSchema,
+  TemplateConfigSchema,
 } from './index';
 
 const d = (s: string) => new Date(s);
@@ -279,5 +280,23 @@ describe('schemas', () => {
       WeeklyScheduleSchema.safeParse({ resourceId: null, days: [{ weekday: 1, intervals: [{ start: '18:00', end: '09:00' }] }] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('template config (магазин оформлений)', () => {
+  const base = {
+    layout: 'neon',
+    sectionOrder: ['hero', 'services'],
+    colorSchemes: [{ key: 'cyber', name: 'Кибер', primary: '#22d3ee', accent: '#f472b6', background: '#07051a', surface: '#120c2e', text: '#e2e8f0' }],
+    bookingButtonPositions: ['floating'],
+  };
+  it('accepts partial style and business tags', () => {
+    const r = TemplateConfigSchema.safeParse({ ...base, style: { font: 'mono', cards: 'glass' }, tags: ['computer_club'] });
+    expect(r.success).toBe(true);
+  });
+  it('rejects unknown style values, layouts and malformed tags', () => {
+    expect(TemplateConfigSchema.safeParse({ ...base, style: { hero: 'parallax' } }).success).toBe(false);
+    expect(TemplateConfigSchema.safeParse({ ...base, layout: 'retro' }).success).toBe(false);
+    expect(TemplateConfigSchema.safeParse({ ...base, tags: ['Computer Club'] }).success).toBe(false);
   });
 });

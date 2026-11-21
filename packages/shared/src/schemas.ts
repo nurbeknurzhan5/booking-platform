@@ -557,8 +557,21 @@ export const AutoTranslateSchema = z.object({
 export const PageModerationSchema = z.object({ blocked: z.boolean(), reason: z.string().min(3).max(500) });
 
 // ---------- шаблоны ----------
+export const TEMPLATE_LAYOUTS = ['classic', 'modern', 'minimal', 'bold', 'neon', 'warm', 'luxe', 'fresh'] as const;
 export const TemplateConfigSchema = z.object({
-  layout: z.enum(['classic', 'modern', 'minimal', 'bold']),
+  layout: z.enum(TEMPLATE_LAYOUTS),
+  /** Стиль поверх макета (задачи 23–24): шрифт заголовков, первый экран, карточки, скругления. */
+  style: z
+    .object({
+      font: z.enum(['sans', 'serif', 'display', 'mono']),
+      hero: z.enum(['cover', 'split', 'centered', 'minimal']),
+      cards: z.enum(['shadow', 'outline', 'flat', 'glass']),
+      radius: z.enum(['none', 'md', 'xl', '2xl']),
+    })
+    .partial()
+    .optional(),
+  /** Направления бизнеса, для которых тема рекомендуется в магазине оформлений. */
+  tags: z.array(z.string().regex(/^[a-z0-9_]{2,40}$/)).max(20).optional(),
   sectionOrder: z.array(z.enum(PAGE_SECTIONS)).min(1),
   colorSchemes: z
     .array(

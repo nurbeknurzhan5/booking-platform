@@ -1,7 +1,8 @@
 'use client';
 
+import { themeRoot } from '@/lib/theme';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppointmentView, PublicPageData, SlotsResponse } from '@/lib/types';
 import { api, ApiError, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { pt, type PublicKey } from '@/lib/i18n-public';
@@ -48,15 +49,14 @@ function useCountdown(until: string | null) {
   return left;
 }
 
-export function BookingFlow({ data }: { data: PublicPageData }) {
+export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; initialServiceId?: string }) {
   const lang = data.locale;
   const t = (k: PublicKey) => pt(lang, k);
-  const c = data.template.colors;
-  const style = { '--tpl-primary': c.primary, '--tpl-accent': c.accent, '--tpl-bg': c.background, '--tpl-surface': c.surface, '--tpl-text': c.text } as CSSProperties;
+  const { style, className: themeClass } = themeRoot(data.template);
   const bookable = data.services.filter((s) => s.onlineBooking);
 
   const [step, setStep] = useState<Step>('services');
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(initialServiceId ? [initialServiceId] : []);
   const [specialistFor, setSpecialistFor] = useState<Record<string, string | null>>({});
   const [slot, setSlot] = useState<Slot | null>(null);
   const [reloadSlots, setReloadSlots] = useState(0);
@@ -290,7 +290,7 @@ export function BookingFlow({ data }: { data: PublicPageData }) {
     ) : null;
 
   return (
-    <div className="tpl min-h-screen" style={style}>
+    <div className={`${themeClass} min-h-screen`} style={style}>
       <div className="mx-auto max-w-xl px-4 pb-10 pt-4">
         <div className="mb-4 flex items-center justify-between">
           <Link href={`/${lang}/b/${data.slug}`} className="tpl-primary text-sm">← {data.branch.name}</Link>

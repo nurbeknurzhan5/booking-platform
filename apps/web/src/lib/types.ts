@@ -18,7 +18,14 @@ export interface PublicPageData {
   autoTranslated: boolean;
   missingTranslation: boolean;
   availability: { mode: 'open' | 'closed_notice' | 'hidden'; bookingEnabled: boolean; waitlistEnabled?: boolean; reason: string | null };
-  template: { key: string; layout: 'classic' | 'modern' | 'minimal' | 'bold'; sectionOrder: string[]; colors: ColorScheme; bookingButtonPosition: string };
+  template: {
+    key: string;
+    layout: 'classic' | 'modern' | 'minimal' | 'bold' | 'neon' | 'warm' | 'luxe' | 'fresh';
+    style?: Partial<import('./theme').ThemeStyle> | null;
+    sectionOrder: string[];
+    colors: ColorScheme;
+    bookingButtonPosition: string;
+  };
   branch: {
     id: string;
     name: string;

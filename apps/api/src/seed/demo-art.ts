@@ -210,3 +210,70 @@ export function hammam(): string {
 export function bathCover(): string {
   return finnishSauna().replace('</svg>', `<rect width="${W}" height="${H}" fill="#2a1406" opacity="0.18"/></svg>`);
 }
+
+/** Салон красоты: пудровые стены, круглые зеркала с подсветкой, кресла, растения, подвесные лампы. */
+export function beautySalon(): string {
+  const r = rng(31);
+  const defs =
+    lin('wallS', [[0, '#f7e4dc'], [1, '#efd3c6']]) +
+    lin('floorS', [[0, '#d9c2b0'], [1, '#bfa48e']]) +
+    rad('mirror', [[0, '#ffffff'], [0.7, '#e9eef3'], [1, '#c9d3dc']], 0.4, 0.35, 0.7) +
+    rad('sun', [[0, '#fff3d9', 0.9], [1, '#fff3d9', 0]], 0.15, 0.1, 0.6) +
+    lin('chair', [[0, '#3b3a4a'], [1, '#22212d']]);
+  let body = `<rect width="${W}" height="${H}" fill="url(#wallS)"/><rect width="${W}" height="${H}" fill="url(#sun)"/>`;
+  // панели стены
+  for (let x = 40; x < W; x += 280) body += `<rect x="${x}" y="40" width="240" height="560" rx="120" fill="#fbeee8" opacity="0.6"/>`;
+  body += `<rect x="0" y="600" width="${W}" height="200" fill="url(#floorS)"/>`;
+  for (let x = -200; x < W + 200; x += 120) body += `<path d="M${x} 800 L${x + 200} 600" stroke="#c7ae99" stroke-width="2" opacity="0.6"/>`;
+  // зеркала, столики и кресла
+  for (const x of [160, 600]) {
+    body += `<circle cx="${x + 140}" cy="260" r="150" fill="#d8b27a"/><circle cx="${x + 140}" cy="260" r="138" fill="url(#mirror)"/>`;
+    body += `<circle cx="${x + 140}" cy="260" r="160" fill="none" stroke="#fff6dd" stroke-width="6" opacity="0.8" filter="url(#glow)"/>`;
+    body += `<rect x="${x + 20}" y="430" width="240" height="18" rx="6" fill="#d8b27a"/><rect x="${x + 30}" y="448" width="220" height="40" rx="6" fill="#efe2d6"/>`;
+    body += `<rect x="${x + 60}" y="404" width="22" height="26" rx="4" fill="#c98b9b"/><rect x="${x + 92}" y="396" width="16" height="34" rx="4" fill="#9fb7a5"/><circle cx="${x + 220}" cy="416" r="14" fill="#f2c7b8"/>`;
+    body += `<rect x="${x + 70}" y="500" width="140" height="90" rx="26" fill="url(#chair)"/><rect x="${x + 60}" y="560" width="160" height="50" rx="20" fill="#2c2b39"/>`;
+    body += `<rect x="${x + 134}" y="610" width="12" height="70" fill="#b7b7c2"/><ellipse cx="${x + 140}" cy="690" rx="60" ry="10" fill="#9c9cab"/>`;
+  }
+  // растение
+  body += `<path d="M1080 690 h80 l-12 80 h-56z" fill="#e8d7c6" stroke="#cdb59f" stroke-width="3"/>`;
+  for (let i = 0; i < 16; i++) {
+    const a = -150 + r() * 120;
+    const len = 90 + r() * 120;
+    const ex = 1120 + Math.cos((a * Math.PI) / 180) * len;
+    const ey = 690 + Math.sin((a * Math.PI) / 180) * len;
+    body += `<path d="M1120 690 Q${(1120 + ex) / 2 + (r() - 0.5) * 40} ${(690 + ey) / 2 - 20} ${ex} ${ey}" stroke="rgb(${60 + Math.floor(r() * 30)},${120 + Math.floor(r() * 40)},${80 + Math.floor(r() * 30)})" stroke-width="${10 + r() * 6}" stroke-linecap="round" fill="none"/>`;
+  }
+  // подвесные лампы
+  for (const x of [300, 600, 900]) body += `<rect x="${x - 1}" y="0" width="2" height="70" fill="#8a7564"/><path d="M${x - 34} 100 a34 30 0 0 1 68 0z" fill="#d8b27a"/><circle cx="${x}" cy="104" r="16" fill="#fff4cf" filter="url(#glow)"/>`;
+  return svg(defs, body);
+}
+
+/** Массажный кабинет: приглушённый свет, кушетка с полотенцами, свечи, камни, орхидея. */
+export function massageRoom(): string {
+  const r = rng(41);
+  const defs =
+    lin('wallM', [[0, '#5b4636'], [1, '#3a2b20']]) +
+    rad('candle', [[0, '#ffd28a', 0.8], [1, '#ffd28a', 0]], 0.75, 0.75, 0.5) +
+    lin('towel', [[0, '#fbf7f0'], [1, '#e6ddcf']]) +
+    lin('wood', [[0, '#9a6b45'], [1, '#6e4a2e']]);
+  let body = `<rect width="${W}" height="${H}" fill="url(#wallM)"/>`;
+  for (let x = 0; x < W; x += 40) body += `<rect x="${x}" y="0" width="18" height="560" fill="#6b5240" opacity="${0.25 + r() * 0.2}"/>`;
+  body += `<rect x="0" y="560" width="${W}" height="240" fill="#2c2119"/><rect width="${W}" height="${H}" fill="url(#candle)"/>`;
+  // кушетка
+  body += `<rect x="180" y="470" width="640" height="60" rx="24" fill="url(#towel)"/><rect x="180" y="455" width="640" height="24" rx="12" fill="#efe6d8"/>`;
+  body += `<rect x="230" y="530" width="24" height="170" fill="url(#wood)"/><rect x="746" y="530" width="24" height="170" fill="url(#wood)"/><rect x="230" y="640" width="540" height="14" fill="url(#wood)"/>`;
+  body += `<rect x="640" y="420" width="150" height="40" rx="16" fill="#c9b49a"/><rect x="650" y="408" width="130" height="26" rx="12" fill="#e9dcc8"/>`;
+  // полотенца стопкой и камни
+  for (let i = 0; i < 3; i++) body += `<rect x="900" y="${640 - i * 30}" width="170" height="28" rx="12" fill="${['#efe6d8', '#d9c7ad', '#f7f1e7'][i]}"/>`;
+  for (let i = 0; i < 5; i++) body += `<ellipse cx="${940 + i * 22}" cy="${540 - i * 14}" rx="${34 - i * 4}" ry="${14 - i * 1.5}" fill="#2b2b2e" stroke="#4a4a4f" stroke-width="2"/>`;
+  // свечи
+  for (const [x, h] of [[880, 70], [1080, 50], [960, 36]] as Array<[number, number]>) {
+    body += `<rect x="${x}" y="${720 - h}" width="40" height="${h}" rx="6" fill="#f6efe2"/><ellipse cx="${x + 20}" cy="${700 - h}" rx="9" ry="16" fill="#ffcf70" filter="url(#glow)"/><ellipse cx="${x + 20}" cy="${704 - h}" rx="5" ry="10" fill="#fff3c2"/>`;
+  }
+  // орхидея
+  body += `<path d="M110 700 h70 l-8 60 h-54z" fill="#e9dccb"/><path d="M145 700 C140 600 150 520 190 470" stroke="#5d7a4a" stroke-width="5" fill="none"/>`;
+  for (const [x, y] of [[190, 470], [176, 512], [160, 556], [205, 500]]) body += `<g transform="translate(${x} ${y})">${[0, 72, 144, 216, 288].map((a) => `<ellipse cx="0" cy="-14" rx="9" ry="16" transform="rotate(${a})" fill="#f3d6e6"/>`).join('')}<circle r="6" fill="#c94f86"/></g>`;
+  // мягкий свет сверху
+  body += `<ellipse cx="500" cy="60" rx="300" ry="60" fill="#ffe2b3" opacity="0.25" filter="url(#soft)"/>`;
+  return svg(defs, body);
+}

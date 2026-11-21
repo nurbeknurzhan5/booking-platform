@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import type { ReactNode } from 'react';
+import { CalendarCheck2, CalendarClock, CalendarPlus, ExternalLink, Palette, PenLine, Scissors, Users, Wallet } from 'lucide-react';
 import { useOrg } from '@/components/dashboard/OrgContext';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
@@ -8,7 +10,21 @@ import { Alert, Badge, Card, PageHeader, Spinner, statusTone } from '@/component
 import type { ApptRow } from '@/components/dashboard/AppointmentDialogs';
 import { addDays, localISODate, money, timeOnly, zonedStartOfDay } from '@/lib/format';
 
-/** Главная панель: записи на сегодня и завтра по выбранному филиалу. */
+/** Плитка показателя со значком. */
+function Stat({ icon, label, value, hint, tone }: { icon: ReactNode; label: string; value: ReactNode; hint?: ReactNode; tone: string }) {
+  return (
+    <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}>{icon}</span>
+      <div className="min-w-0">
+        <div className="text-sm text-slate-500">{label}</div>
+        <div className="text-2xl font-semibold leading-tight">{value}</div>
+        {hint && <div className="text-xs text-slate-500">{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Главная панель: показатели, записи на сегодня и завтра, живое превью страницы филиала и быстрые действия. */
 export default function OverviewPage() {
   const { base, branch, org, can } = useOrg();
   const { t, st } = useT();
@@ -50,25 +66,55 @@ export default function OverviewPage() {
         <div className="mb-4"><Alert tone="amber">{t('appointmentsOutsideShifts')} {shifts.data.conflicts.length}. <Link className="font-medium underline" href={`/dashboard/${org.id}/schedule`}>{t('resourcesSchedule')} →</Link></Alert></div>
       )}
       {branch && (
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card title={t('today')}>
-            <p className="text-3xl font-semibold">{byDay(today).length}</p>
-            <p className="text-sm text-slate-500">{money(revenue(today))}</p>
-          </Card>
-          <Card title={t('tomorrow')}>
-            <p className="text-3xl font-semibold">{byDay(tomorrow).length}</p>
-            <p className="text-sm text-slate-500">{money(revenue(tomorrow))}</p>
-          </Card>
-          <Card title={t('openPage')}>
-            <a className="break-all text-sm text-brand-700 underline" href={`/ru/b/${branch.slug}`} target="_blank" rel="noreferrer">/ru/b/{branch.slug}</a>
-            <p className="mt-3 text-sm">
-              <Link className="text-brand-700 underline" href={`/dashboard/${org.id}/appointments`}>{t('appointments')} →</Link>
-            </p>
-          </Card>
-          <Card title={t('dashboardHint')} className="lg:col-span-3">{list(today)}</Card>
-          <Card title={t('tomorrowAppointments')} className="lg:col-span-3">{list(tomorrow)}</Card>
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Stat icon={<CalendarCheck2 className="h-6 w-6" />} tone="bg-brand-50 text-brand-600" label={t('today')} value={byDay(today).length} hint={money(revenue(today))} />
+            <Stat icon={<CalendarClock className="h-6 w-6" />} tone="bg-sky-50 text-sky-600" label={t('tomorrow')} value={byDay(tomorrow).length} hint={money(revenue(tomorrow))} />
+            <Stat icon={<Wallet className="h-6 w-6" />} tone="bg-emerald-50 text-emerald-600" label={t('revenueTwoDays')} value={money(revenue(today) + revenue(tomorrow))} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="space-y-4 lg:col-span-2">
+              <Card title={t('dashboardHint')} actions={<Link className="text-sm font-medium text-brand-700 hover:underline" href={`/dashboard/${org.id}/appointments`}>{t('appointments')} →</Link>}>{list(today)}</Card>
+              <Card title={t('tomorrowAppointments')}>{list(tomorrow)}</Card>
+            </div>
+            <div className="space-y-4">
+              <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <a href={`/ru/b/${branch.slug}`} target="_blank" rel="noreferrer" className="relative block h-[220px] overflow-hidden bg-slate-100" aria-label={t('openPage')}>
+                  <iframe title="page" src={`/ru/b/${branch.slug}`} loading="lazy" tabIndex={-1} className="pointer-events-none absolute left-0 top-0 h-[880px] w-[1280px] origin-top-left scale-[0.25] sm:scale-[0.3] lg:scale-[0.27]" />
+                </a>
+                <div className="space-y-3 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="font-semibold">{t('yourPage')}</h2>
+                    <a className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline" href={`/ru/b/${branch.slug}`} target="_blank" rel="noreferrer">{t('openPage')} <ExternalLink className="h-3.5 w-3.5" /></a>
+                  </div>
+                  <p className="break-all text-xs text-slate-500">/ru/b/{branch.slug}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {can('pages.edit', branch.id) && <QuickLink href={`/dashboard/${org.id}/themes`} icon={<Palette className="h-4 w-4" />}>{t('themesTitle')}</QuickLink>}
+                    {can('pages.edit', branch.id) && <QuickLink href={`/dashboard/${org.id}/branches/${branch.id}/page-editor`} icon={<PenLine className="h-4 w-4" />}>{t('editPage')}</QuickLink>}
+                  </div>
+                </div>
+              </section>
+              <Card title={t('quickActions')}>
+                <div className="grid grid-cols-2 gap-2">
+                  {can('appointments.view', branch.id) && <QuickLink href={`/dashboard/${org.id}/appointments`} icon={<CalendarPlus className="h-4 w-4" />}>{t('appointments')}</QuickLink>}
+                  <QuickLink href={`/dashboard/${org.id}/schedule`} icon={<CalendarClock className="h-4 w-4" />}>{t('resourcesSchedule')}</QuickLink>
+                  <QuickLink href={`/dashboard/${org.id}/services`} icon={<Scissors className="h-4 w-4" />}>{t('services')}</QuickLink>
+                  <QuickLink href={`/dashboard/${org.id}/specialists`} icon={<Users className="h-4 w-4" />}>{t('specialists')}</QuickLink>
+                </div>
+              </Card>
+            </div>
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function QuickLink({ href, icon, children }: { href: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <Link href={href} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+      <span className="text-slate-400">{icon}</span>
+      {children}
+    </Link>
   );
 }

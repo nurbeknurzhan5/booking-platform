@@ -25,7 +25,7 @@ export class TemplatesService {
     return rows.filter((r) => r.currentVersion).map((r) => this.view(r));
   }
 
-  view(r: { id: string; key: string; name: string; description: string | null; status: string; previewAssetId: string | null; currentVersion: { id: string; version: number; config: unknown } | null }) {
+  view(r: { id: string; key: string; name: string; description: string | null; status: string; previewAssetId: string | null; createdAt: Date; currentVersion: { id: string; version: number; config: unknown } | null }) {
     return {
       id: r.id,
       key: r.key,
@@ -33,6 +33,9 @@ export class TemplatesService {
       description: r.description,
       status: r.status,
       previewAssetId: r.previewAssetId,
+      /** Новинка магазина оформлений — шаблон добавлен в последние 30 дней. */
+      isNew: Date.now() - r.createdAt.getTime() < 30 * 86400_000,
+      createdAt: r.createdAt,
       version: r.currentVersion?.version ?? null,
       versionId: r.currentVersion?.id ?? null,
       config: (r.currentVersion?.config ?? null) as TemplateConfig | null,

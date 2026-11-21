@@ -26,6 +26,7 @@ body {
   --tpl-text: #0f172a;
   background: var(--tpl-bg);
   color: var(--tpl-text);
+  accent-color: var(--tpl-primary);
 }
 .tpl .tpl-surface {
   background: var(--tpl-surface);
@@ -45,6 +46,76 @@ body {
 }
 .tpl .tpl-muted {
   color: color-mix(in srgb, var(--tpl-text) 65%, transparent);
+}
+
+/* Темы (задачи 23–24): скругление, шрифт заголовков, стиль карточек */
+.tpl {
+  --tpl-radius: 16px;
+}
+.tpl .tpl-r {
+  border-radius: var(--tpl-radius);
+}
+.tpl .tpl-r-sm {
+  border-radius: calc(var(--tpl-radius) * 0.6);
+}
+.tpl .tpl-pill {
+  border-radius: max(var(--tpl-radius), 999px);
+}
+.tpl.tpl-layout-luxe .tpl-pill,
+.tpl.tpl-layout-minimal .tpl-pill {
+  border-radius: var(--tpl-radius);
+}
+.tpl .tpl-heading {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.tpl-font-serif .tpl-heading {
+  font-family: Georgia, 'Times New Roman', 'PT Serif', serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.tpl-font-display .tpl-heading {
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+.tpl-font-mono .tpl-heading {
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.tpl .tpl-card {
+  background: var(--tpl-surface);
+  border-radius: var(--tpl-radius);
+}
+.tpl-cards-shadow .tpl-card {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--tpl-text) 6%, transparent), 0 10px 30px -12px color-mix(in srgb, var(--tpl-text) 22%, transparent);
+}
+.tpl-cards-outline .tpl-card {
+  border: 1px solid color-mix(in srgb, var(--tpl-text) 14%, transparent);
+}
+.tpl-cards-flat .tpl-card {
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--tpl-text) 12%, transparent);
+  border-radius: 0;
+}
+.tpl-cards-glass .tpl-card {
+  background: color-mix(in srgb, var(--tpl-surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tpl-accent) 28%, transparent);
+  backdrop-filter: blur(8px);
+}
+.tpl-layout-neon .tpl-btn {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--tpl-primary) 55%, transparent);
+}
+.tpl-layout-luxe .tpl-heading {
+  letter-spacing: 0.06em;
+}
+.tpl .tpl-chip {
+  background: color-mix(in srgb, var(--tpl-primary) 12%, transparent);
+  color: var(--tpl-primary);
+}
+.tpl .tpl-soft {
+  background: color-mix(in srgb, var(--tpl-primary) 7%, var(--tpl-bg));
 }
 
 .focus-ring {

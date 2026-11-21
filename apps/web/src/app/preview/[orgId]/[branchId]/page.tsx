@@ -12,6 +12,7 @@ function Preview() {
   const sp = useSearchParams();
   const qs = new URLSearchParams({ locale: sp.get('locale') ?? 'ru' });
   if (sp.get('templateId')) qs.set('templateId', sp.get('templateId')!);
+  if (sp.get('colorScheme')) qs.set('colorScheme', sp.get('colorScheme')!);
   const { data, error } = useApi<PublicPageData>(`/organizations/${orgId}/branches/${branchId}/page/preview?${qs.toString()}`);
   if (error) return <div className="p-6"><Alert>{error}</Alert></div>;
   if (!data) return <Spinner />;

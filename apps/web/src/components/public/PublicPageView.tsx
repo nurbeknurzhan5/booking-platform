@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PublicPageData } from '@/lib/types';
 import { pt } from '@/lib/i18n-public';
 import { money, minutesLabel, weekdayName, formatPhone, shortDate } from '@/lib/format';
 import { captureUtm, track } from '@/lib/analytics';
+import { themeRoot } from '@/lib/theme';
 import { MapBlock } from './MapBlock';
 
 const SOCIAL_ICONS: Record<string, string> = {
@@ -22,27 +23,33 @@ const SOCIAL_ICONS: Record<string, string> = {
   link: '🔗',
 };
 
-type Layout = PublicPageData['template']['layout'];
+type Key = Parameters<typeof pt>[1];
 
-const L: Record<Layout, { hero: string; h1: string; section: string; card: string; radius: string; heading: string }> = {
-  classic: { hero: 'text-center py-14 sm:py-20', h1: 'text-3xl sm:text-5xl font-serif', section: 'py-10', card: 'border tpl-border', radius: 'rounded-lg', heading: 'text-2xl font-serif text-center mb-6' },
-  modern: { hero: 'py-12 sm:py-16', h1: 'text-3xl sm:text-5xl font-bold tracking-tight', section: 'py-10', card: 'shadow-md', radius: 'rounded-2xl', heading: 'text-2xl font-bold mb-5' },
-  minimal: { hero: 'py-10', h1: 'text-2xl sm:text-4xl font-semibold', section: 'py-8 border-t tpl-border', card: '', radius: 'rounded-none', heading: 'text-lg font-semibold uppercase tracking-widest mb-4' },
-  bold: { hero: 'py-16 sm:py-24 text-center', h1: 'text-4xl sm:text-6xl font-black uppercase', section: 'py-12', card: 'border-2 tpl-border', radius: 'rounded-xl', heading: 'text-3xl font-black uppercase mb-6 tpl-accent' },
-};
+/** Звёзды рейтинга. */
+const Stars = ({ value }: { value: number }) => (
+  <span className="tpl-accent" aria-label={`${value} / 5`}>
+    {'★'.repeat(Math.round(value))}
+    <span className="opacity-25">{'★'.repeat(5 - Math.round(value))}</span>
+  </span>
+);
 
+/** Публичная страница филиала (§13) в выбранной теме (макет + стиль + цветовая схема). */
 export function PublicPageView({ data, preview = false, device }: { data: PublicPageData; preview?: boolean; device?: 'mobile' | 'desktop' }) {
   const lang = data.locale;
-  const t = (k: Parameters<typeof pt>[1]) => pt(lang, k);
-  const lay = L[data.template.layout] ?? L.classic;
+  const t = (k: Key) => pt(lang, k);
+  const { style, className, theme } = themeRoot(data.template);
   const c = data.template.colors;
-  const style = { '--tpl-primary': c.primary, '--tpl-accent': c.accent, '--tpl-bg': c.background, '--tpl-surface': c.surface, '--tpl-text': c.text } as CSSProperties;
   const bookingOpen = data.availability.bookingEnabled && data.availability.mode === 'open';
   const bookHref = `/${lang}/b/${data.slug}/book`;
   const pos = data.template.bookingButtonPosition;
+  const centered = theme.hero === 'centered' || data.template.layout === 'luxe';
   const [canEdit, setCanEdit] = useState<{ canEdit: boolean; organizationId?: string; branchId?: string } | null>(null);
+  // День недели по часовому поясу филиала — только в браузере, чтобы разметка сервера и клиента совпадала.
+  const [todayWd, setTodayWd] = useState<number | null>(null);
 
   useEffect(() => {
+    const wd = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: data.branch.timezone }).format(new Date());
+    setTodayWd(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(wd) + 1);
     if (preview) return;
     const utm = captureUtm(new URLSearchParams(location.search));
     track(data.slug, 'page_view', { utm });
@@ -50,7 +57,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       .then((r) => r.json())
       .then(setCanEdit)
       .catch(() => undefined);
-  }, [data.slug, preview]);
+  }, [data.slug, data.branch.timezone, preview]);
 
   const onBookClick = () => {
     if (!preview) track(data.slug, 'booking_click');
@@ -58,8 +65,13 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
 
   const BookButton = ({ big }: { big?: boolean }) =>
     bookingOpen ? (
-      <Link href={preview ? '#' : bookHref} onClick={onBookClick} className={`tpl-btn inline-flex items-center justify-center font-semibold shadow-sm ${lay.radius} ${big ? 'px-8 py-4 text-lg' : 'px-5 py-2.5 text-sm'}`} data-testid="book-button">
-        {t('book')}
+      <Link
+        href={preview ? '#' : bookHref}
+        onClick={onBookClick}
+        className={`tpl-btn tpl-pill inline-flex items-center justify-center gap-2 font-semibold shadow-lg transition-transform hover:-translate-y-0.5 ${big ? 'px-8 py-4 text-base sm:text-lg' : 'px-5 py-2.5 text-sm'}`}
+        data-testid="book-button"
+      >
+        {t('book')} <span aria-hidden>→</span>
       </Link>
     ) : null;
 
@@ -84,40 +96,100 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     return [...groups.values()].map((g) => ({ ...g, name: g.count > 1 ? g.name.replace(/\s*№?\d+$/, '') : g.name }));
   }, [data.resources]);
 
-  const Section = ({ id, title, children }: { id: string; title: string; children: ReactNode }) => (
-    <section id={id} className={`${lay.section} px-4`}>
-      <div className="mx-auto max-w-5xl">
-        <h2 className={lay.heading}>{title}</h2>
+  const order = data.template.sectionOrder;
+  const has = (s: string) => order.includes(s);
+  const nav = (
+    [
+      ['services', 'services'],
+      ['resources', 'resourcesTitle'],
+      ['specialists', 'specialists'],
+      ['reviews', 'reviews'],
+      ['contacts', 'contacts'],
+    ] as Array<[string, Key]>
+  ).filter(([s]) => has(s) && (s !== 'resources' || !!data.resources?.length) && (s !== 'specialists' || data.specialists.length > 0));
+
+  const Section = ({ id, title, children, soft }: { id: string; title: string; children: ReactNode; soft?: boolean }) => (
+    <section id={id} className={`scroll-mt-16 px-4 py-12 sm:py-16 ${soft ? 'tpl-soft' : ''}`}>
+      <div className="mx-auto max-w-6xl">
+        <h2 className={`tpl-heading mb-8 text-2xl sm:text-3xl ${centered ? 'text-center' : ''}`}>{title}</h2>
         {children}
       </div>
     </section>
   );
 
-  const sections: Record<string, () => ReactNode> = {
-    hero: () => (
-      <header key="hero" className={`relative overflow-hidden px-4 ${lay.hero}`}>
-        {data.content.cover && data.template.layout !== 'minimal' && (
-          <div className="absolute inset-0 -z-0 opacity-25" style={{ backgroundImage: `url(${data.content.cover.large})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+  const cover = data.content.cover;
+  const heroInfo = (light: boolean) => (
+    <>
+      {data.content.logo && <img src={data.content.logo.thumb} alt="" className={`tpl-r mb-5 h-16 w-16 object-cover shadow-md ${centered ? 'mx-auto' : ''}`} />}
+      <h1 className="tpl-heading text-4xl leading-[1.05] sm:text-6xl">{data.content.title}</h1>
+      {data.content.tagline && <p className={`mt-4 max-w-2xl text-lg sm:text-xl ${light ? 'text-white/85' : 'tpl-muted'} ${centered ? 'mx-auto' : ''}`}>{data.content.tagline}</p>}
+      <div className={`mt-5 flex flex-wrap gap-2 text-sm ${centered ? 'justify-center' : ''}`}>
+        {data.branch.address && <span className={`tpl-pill px-3 py-1 ${light ? 'bg-white/15 text-white backdrop-blur' : 'tpl-chip'}`}>📍 {data.branch.address}</span>}
+        {data.reviews.average !== null && (
+          <span className={`tpl-pill px-3 py-1 ${light ? 'bg-white/15 text-white backdrop-blur' : 'tpl-chip'}`}>★ {data.reviews.average} · {data.reviews.count} {t('reviews').toLowerCase()}</span>
         )}
-        <div className={`relative mx-auto max-w-5xl ${data.template.layout === 'modern' ? 'grid items-center gap-8 sm:grid-cols-2' : ''}`}>
-          <div>
-            {data.content.logo && <img src={data.content.logo.thumb} alt="" className={`mb-4 h-16 w-16 object-cover ${data.template.layout === 'classic' || data.template.layout === 'bold' ? 'mx-auto' : ''} ${lay.radius}`} />}
-            <h1 className={lay.h1}>{data.content.title}</h1>
-            {data.content.tagline && <p className="tpl-muted mt-3 text-lg">{data.content.tagline}</p>}
-            {data.branch.address && <p className="tpl-muted mt-2 text-sm">📍 {data.branch.address}</p>}
-            {data.reviews.average !== null && (
-              <p className="mt-2 text-sm"><span className="tpl-accent">★</span> {data.reviews.average} · {data.reviews.count} {t('reviews').toLowerCase()}</p>
-            )}
-            <div className="mt-6">{(pos === 'header' || pos === 'bottom' || pos === 'floating' || pos === 'after_services') && <BookButton big />}</div>
+      </div>
+      <div className={`mt-8 flex flex-wrap items-center gap-3 ${centered ? 'justify-center' : ''}`}>
+        <BookButton big />
+        {has('services') && (
+          <a href="#services" className={`tpl-pill px-6 py-4 text-base font-semibold ${light ? 'border border-white/50 text-white hover:bg-white/10' : 'tpl-border border hover:opacity-80'}`}>
+            {t('seePrices')}
+          </a>
+        )}
+      </div>
+    </>
+  );
+
+  const hero = (): ReactNode => {
+    if (theme.hero === 'cover') {
+      return (
+        <header key="hero" className="relative isolate overflow-hidden">
+          {cover ? (
+            <img src={cover.large ?? cover.medium} alt="" className="absolute inset-0 -z-10 h-full w-full object-cover" />
+          ) : (
+            <div className="absolute inset-0 -z-10" style={{ background: `linear-gradient(135deg, ${c.primary}, ${c.accent})` }} />
+          )}
+          <div className="absolute inset-0 -z-10 bg-gradient-to-t from-black/85 via-black/45 to-black/15" />
+          <div className={`mx-auto flex min-h-[64vh] max-w-6xl flex-col justify-end px-4 pb-14 pt-24 text-white ${centered ? 'items-center text-center' : ''}`}>{heroInfo(true)}</div>
+        </header>
+      );
+    }
+    if (theme.hero === 'split') {
+      return (
+        <header key="hero" className="relative overflow-hidden px-4 py-14 sm:py-20">
+          <div className="pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full opacity-25 blur-3xl" style={{ background: c.primary }} />
+          <div className="pointer-events-none absolute -bottom-40 -left-24 h-80 w-80 rounded-full opacity-20 blur-3xl" style={{ background: c.accent }} />
+          <div className="relative mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[1.1fr_1fr]">
+            <div>{heroInfo(false)}</div>
+            {cover && <img src={cover.medium} alt="" className="tpl-r aspect-[4/3] w-full object-cover shadow-2xl" />}
           </div>
-          {data.template.layout === 'modern' && data.content.cover && <img src={data.content.cover.medium} alt="" className={`hidden w-full object-cover sm:block ${lay.radius}`} />}
-        </div>
+        </header>
+      );
+    }
+    if (theme.hero === 'centered') {
+      return (
+        <header
+          key="hero"
+          className="px-4 py-20 text-center sm:py-28"
+          style={cover ? { backgroundImage: `linear-gradient(color-mix(in srgb, ${c.background} 84%, transparent), ${c.background}), url(${cover.large ?? cover.medium})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        >
+          <div className="mx-auto max-w-4xl">{heroInfo(false)}</div>
+        </header>
+      );
+    }
+    return (
+      <header key="hero" className="px-4 pb-8 pt-14 sm:pt-20">
+        <div className="mx-auto max-w-6xl">{heroInfo(false)}</div>
       </header>
-    ),
+    );
+  };
+
+  const sections: Record<string, () => ReactNode> = {
+    hero,
     about: () =>
       data.content.about ? (
         <Section key="about" id="about" title={t('about')}>
-          <p className="whitespace-pre-line leading-relaxed">{data.content.about}</p>
+          <p className={`max-w-3xl whitespace-pre-line text-lg leading-relaxed ${centered ? 'mx-auto text-center' : ''}`}>{data.content.about}</p>
         </Section>
       ) : null,
     gallery: () =>
@@ -125,52 +197,59 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
         <Section key="gallery" id="gallery" title={t('gallery')}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {data.content.gallery.map((g, i) => (
-              <img key={i} src={g.medium} alt="" loading="lazy" className={`aspect-square w-full object-cover ${lay.radius}`} />
+              <img key={i} src={g.medium} alt="" loading="lazy" className={`tpl-r w-full object-cover ${i === 0 && data.content.gallery.length % 2 === 1 ? 'col-span-2 aspect-[2/1] sm:col-span-1 sm:aspect-square' : 'aspect-square'}`} />
             ))}
           </div>
         </Section>
       ) : null,
     services: () => (
-      <Section key="services" id="services" title={t('services')}>
+      <Section key="services" id="services" title={t('services')} soft>
         {byCategory.map(([cat, list]) => (
-          <div key={cat} className="mb-6">
-            {cat && <h3 className="tpl-primary mb-3 font-semibold">{cat}</h3>}
-            <ul className={data.template.layout === 'minimal' ? 'divide-y tpl-border' : 'grid gap-3 sm:grid-cols-2'}>
+          <div key={cat} className="mb-8 last:mb-0">
+            {cat && <h3 className="tpl-primary mb-3 text-sm font-semibold uppercase tracking-wider">{cat}</h3>}
+            <ul className={theme.cards === 'flat' ? '' : 'grid gap-3 md:grid-cols-2'}>
               {list.map((s) => (
-                <li key={s.id} className={data.template.layout === 'minimal' ? 'flex items-start justify-between gap-4 py-3' : `tpl-surface flex gap-3 p-4 ${lay.card} ${lay.radius}`}>
-                  {s.photo && data.template.layout !== 'minimal' && <img src={s.photo.thumb} alt="" loading="lazy" className={`h-16 w-16 flex-none object-cover ${lay.radius}`} />}
+                <li key={s.id} className={`tpl-card flex items-start gap-4 ${theme.cards === 'flat' ? 'py-4' : 'p-4 sm:p-5'}`}>
+                  {s.photo && theme.cards !== 'flat' && <img src={s.photo.thumb} alt="" loading="lazy" className="tpl-r-sm h-16 w-16 flex-none object-cover" />}
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium">{s.name}</div>
+                    <div className="font-semibold">{s.name}</div>
                     {s.description && <p className="tpl-muted mt-1 text-sm">{s.description}</p>}
-                    <p className="tpl-muted mt-1 text-xs">{minutesLabel(s.durationMinutes, lang)}</p>
+                    <p className="tpl-muted mt-1.5 text-xs">⏱ {minutesLabel(s.durationMinutes, lang)}</p>
                   </div>
-                  <div className="whitespace-nowrap font-semibold">{money(s.price)}</div>
+                  <div className="flex flex-none flex-col items-end gap-2">
+                    <div className="whitespace-nowrap text-lg font-bold">{money(s.price)}</div>
+                    {bookingOpen && s.onlineBooking && (
+                      <Link href={preview ? '#' : `${bookHref}?service=${s.id}`} onClick={onBookClick} className="tpl-chip tpl-pill whitespace-nowrap px-3 py-1 text-xs font-semibold" data-testid="book-service">
+                        {t('bookThis')}
+                      </Link>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
           </div>
         ))}
-        {pos === 'after_services' && <div className="mt-6 text-center"><BookButton big /></div>}
+        {pos === 'after_services' && <div className="mt-8 text-center"><BookButton big /></div>}
       </Section>
     ),
     resources: () =>
       data.resources?.length ? (
         <Section key="resources" id="resources" title={t('resourcesTitle')}>
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="public-resources">
+          <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-testid="public-resources">
             {resourceGroups.map(({ r, count, name }) => {
               const tariffs = data.services.filter((s) => r.serviceIds.includes(s.id));
               return (
-                <li key={r.id} className={`tpl-surface overflow-hidden ${lay.card} ${lay.radius}`}>
+                <li key={r.id} className="tpl-card overflow-hidden">
                   {r.photo && <img src={r.photo.medium} alt="" loading="lazy" className="aspect-[3/2] w-full object-cover" />}
-                  <div className="p-4">
+                  <div className="p-5">
                     <div className="tpl-muted text-xs uppercase tracking-wide">
-                      {t(`rt_${r.type}` as Parameters<typeof pt>[1])}
+                      {t(`rt_${r.type}` as Key)}
                       {count > 1 && ` · ${count} ${t('placesCount')}`}
                     </div>
-                    <div className="mt-0.5 text-lg font-semibold">{name}</div>
-                    {r.description && <p className="tpl-muted mt-1 whitespace-pre-line text-sm">{r.description}</p>}
+                    <div className="tpl-heading mt-1 text-xl">{name}</div>
+                    {r.description && <p className="tpl-muted mt-2 whitespace-pre-line text-sm">{r.description}</p>}
                     {tariffs.length > 0 && (
-                      <ul className="mt-3 space-y-1 text-sm">
+                      <ul className="mt-4 space-y-1.5 border-t tpl-border pt-3 text-sm">
                         {tariffs.map((s) => (
                           <li key={s.id} className="flex justify-between gap-3">
                             <span>{s.name}</span>
@@ -189,16 +268,19 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     specialists: () =>
       data.specialists.length ? (
         <Section key="specialists" id="specialists" title={t('specialists')}>
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {data.specialists.map((s) => (
-              <li key={s.id} className={`tpl-surface p-3 text-center ${lay.card} ${lay.radius}`}>
+              <li key={s.id} className="tpl-card p-5 text-center">
                 {s.photo ? (
-                  <img src={s.photo.medium} alt="" loading="lazy" className={`mx-auto mb-2 aspect-square w-full object-cover ${lay.radius}`} />
+                  <img src={s.photo.medium} alt="" loading="lazy" className="mx-auto mb-3 h-24 w-24 rounded-full object-cover shadow-md" />
                 ) : (
-                  <div className={`tpl-btn mx-auto mb-2 flex aspect-square w-full items-center justify-center text-3xl font-bold ${lay.radius}`}>{s.name.slice(0, 1)}</div>
+                  <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full text-3xl font-bold text-white shadow-md" style={{ background: `linear-gradient(135deg, ${c.primary}, ${c.accent})` }}>
+                    {s.name.slice(0, 1)}
+                  </div>
                 )}
-                <div className="font-medium">{s.name}</div>
-                {s.specialization && <div className="tpl-muted text-xs">{s.specialization}</div>}
+                <div className="font-semibold">{s.name}</div>
+                {s.specialization && <div className="tpl-muted text-sm">{s.specialization}</div>}
+                {s.description && <p className="tpl-muted mt-2 line-clamp-3 text-xs">{s.description}</p>}
               </li>
             ))}
           </ul>
@@ -206,15 +288,20 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       ) : null,
     promotions: () =>
       data.promotions.length ? (
-        <Section key="promotions" id="promotions" title={t('promotions')}>
-          <ul className="grid gap-3 sm:grid-cols-2">
+        <Section key="promotions" id="promotions" title={t('promotions')} soft>
+          <ul className="grid gap-4 sm:grid-cols-2">
             {data.promotions.map((p) => (
-              <li key={p.id} className={`tpl-surface p-4 ${lay.card} ${lay.radius}`}>
-                <div className="tpl-accent text-2xl font-bold">−{p.discountType === 'percent' ? `${p.discountValue}%` : money(p.discountValue)}</div>
-                <div className="font-medium">{p.name}</div>
+              <li key={p.id} className="tpl-card relative overflow-hidden p-5 pl-7">
+                <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: c.accent }} />
+                <div className="tpl-accent text-3xl font-black">−{p.discountType === 'percent' ? `${p.discountValue}%` : money(p.discountValue)}</div>
+                <div className="mt-1 font-semibold">{p.name}</div>
                 {p.description && <p className="tpl-muted text-sm">{p.description}</p>}
-                {p.code && <p className="mt-1 text-sm">{t('promoCode')}: <code className="font-mono font-semibold">{p.code}</code></p>}
-                {p.endsAt && <p className="tpl-muted text-xs">{t('until')} {shortDate(p.endsAt, lang)}</p>}
+                {p.code && (
+                  <p className="mt-3 text-sm">
+                    {t('promoCode')}: <code className="tpl-chip tpl-pill px-2.5 py-1 font-mono font-semibold">{p.code}</code>
+                  </p>
+                )}
+                {p.endsAt && <p className="tpl-muted mt-2 text-xs">{t('until')} {shortDate(p.endsAt, lang)}</p>}
               </li>
             ))}
           </ul>
@@ -222,16 +309,25 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       ) : null,
     reviews: () => (
       <Section key="reviews" id="reviews" title={t('reviews')}>
+        {data.reviews.average !== null && (
+          <div className={`mb-6 flex items-center gap-3 ${centered ? 'justify-center' : ''}`}>
+            <span className="tpl-heading text-5xl">{data.reviews.average}</span>
+            <div className="text-xl">
+              <Stars value={data.reviews.average} />
+              <div className="tpl-muted text-sm">{data.reviews.count} {t('reviews').toLowerCase()}</div>
+            </div>
+          </div>
+        )}
         {data.reviews.items.length === 0 ? (
-          <p className="tpl-muted">{t('noReviews')}</p>
+          <p className={`tpl-muted ${centered ? 'text-center' : ''}`}>{t('noReviews')}</p>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2">
+          <ul className="grid gap-4 md:grid-cols-2">
             {data.reviews.items.map((r) => (
-              <li key={r.id} className={`tpl-surface p-4 ${lay.card} ${lay.radius}`}>
-                <div className="tpl-accent">{'★'.repeat(r.rating)}<span className="opacity-30">{'★'.repeat(5 - r.rating)}</span></div>
-                {r.text && <p className="mt-1 text-sm">{r.text}</p>}
-                <p className="tpl-muted mt-2 text-xs">{r.authorName} · {shortDate(r.createdAt, lang)}</p>
-                {r.reply && <p className="tpl-muted mt-2 border-l-2 tpl-border pl-2 text-sm">{r.reply}</p>}
+              <li key={r.id} className="tpl-card p-5">
+                <Stars value={r.rating} />
+                {r.text && <p className="mt-2">{r.text}</p>}
+                <p className="tpl-muted mt-3 text-xs">{r.authorName} · {shortDate(r.createdAt, lang)}</p>
+                {r.reply && <p className="tpl-muted mt-3 border-l-2 tpl-border pl-3 text-sm">{r.reply}</p>}
               </li>
             ))}
           </ul>
@@ -239,11 +335,11 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       </Section>
     ),
     schedule: () => (
-      <Section key="schedule" id="schedule" title={t('schedule')}>
-        <ul className="max-w-md space-y-1 text-sm">
+      <Section key="schedule" id="schedule" title={t('schedule')} soft>
+        <ul className={`tpl-card max-w-lg divide-y tpl-border p-2 text-sm ${centered ? 'mx-auto' : ''}`}>
           {data.schedule.map((d) => (
-            <li key={d.weekday} className="flex justify-between gap-4 border-b tpl-border py-1.5">
-              <span className="capitalize">{weekdayName(d.weekday, lang)}</span>
+            <li key={d.weekday} className={`flex justify-between gap-4 px-3 py-2.5 ${d.weekday === todayWd ? 'tpl-chip tpl-r-sm font-semibold' : ''}`}>
+              <span>{weekdayName(d.weekday, lang)}</span>
               <span>{d.intervals.length ? d.intervals.map((i) => `${i.start}–${i.end}`).join(', ') : t('dayOff')}</span>
             </li>
           ))}
@@ -252,9 +348,13 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     ),
     contacts: () => (
       <Section key="contacts" id="contacts" title={t('contacts')}>
-        <div className="space-y-2">
-          {data.branch.address && <p>📍 {data.branch.address}</p>}
-          {data.branch.phone && <p>📞 <a className="tpl-primary underline" href={`tel:${data.branch.phone}`}>{formatPhone(data.branch.phone)}</a></p>}
+        <div className={`flex flex-wrap gap-3 ${centered ? 'justify-center' : ''}`}>
+          {data.branch.address && <span className="tpl-card px-5 py-3">📍 {data.branch.address}</span>}
+          {data.branch.phone && (
+            <a className="tpl-card px-5 py-3 font-semibold hover:opacity-80" href={`tel:${data.branch.phone}`}>
+              📞 {formatPhone(data.branch.phone)}
+            </a>
+          )}
         </div>
       </Section>
     ),
@@ -267,10 +367,10 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     socials: () =>
       data.content.socials.length ? (
         <Section key="socials" id="socials" title={t('socials')}>
-          <ul className="flex flex-wrap gap-2">
+          <ul className={`flex flex-wrap gap-2 ${centered ? 'justify-center' : ''}`}>
             {data.content.socials.map((s) => (
               <li key={s.url}>
-                <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className={`tpl-surface inline-flex items-center gap-2 px-4 py-2 text-sm ${lay.card} ${lay.radius}`}>
+                <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="tpl-card tpl-pill inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium hover:opacity-80">
                   <span aria-hidden>{SOCIAL_ICONS[s.platform] ?? SOCIAL_ICONS.link}</span>
                   {s.label}
                 </a>
@@ -282,24 +382,33 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
   };
 
   return (
-    <div className={`tpl min-h-screen ${device === 'mobile' ? 'mx-auto max-w-[390px] border-x' : ''}`} style={style} lang={lang}>
-      <div className="sticky top-0 z-30 border-b tpl-border tpl-surface/90 backdrop-blur" style={{ background: c.surface }}>
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-2">
-          <span className="truncate font-semibold">{data.branch.name}</span>
+    <div className={`${className} min-h-screen ${device === 'mobile' ? 'mx-auto max-w-[390px] border-x' : ''}`} style={style} lang={lang}>
+      <div className="sticky top-0 z-30 border-b tpl-border backdrop-blur" style={{ background: `color-mix(in srgb, ${c.surface} 88%, transparent)` }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
+          <a href="#top" className="flex min-w-0 items-center gap-2">
+            {data.content.logo && <img src={data.content.logo.thumb} alt="" className="tpl-r-sm h-8 w-8 flex-none object-cover" />}
+            <span className="tpl-heading truncate text-sm sm:text-base">{data.branch.name}</span>
+          </a>
+          <nav className="hidden items-center gap-5 text-sm md:flex" aria-label="sections">
+            {nav.map(([id, label]) => (
+              <a key={id} href={`#${id}`} className="tpl-muted hover:opacity-100">{t(label)}</a>
+            ))}
+          </nav>
           <div className="flex items-center gap-2">
             <nav aria-label="language" className="flex gap-1 text-xs">
               {data.availableLocales.map((l) => (
-                <Link key={l} href={preview ? '#' : `/${l}/b/${data.slug}`} className={`rounded px-1.5 py-0.5 uppercase ${l === lang ? 'tpl-btn' : 'tpl-muted'}`}>{l}</Link>
+                <Link key={l} href={preview ? '#' : `/${l}/b/${data.slug}`} className={`tpl-pill px-2 py-0.5 uppercase ${l === lang ? 'tpl-btn' : 'tpl-muted'}`}>{l}</Link>
               ))}
             </nav>
             {pos === 'header' && <BookButton />}
           </div>
         </div>
       </div>
+      <span id="top" />
 
       {preview && <div className="bg-amber-200 px-4 py-1 text-center text-xs text-amber-900">Предпросмотр черновика — посетители видят опубликованную версию</div>}
       {canEdit?.canEdit && (
-        <div className="fixed left-3 top-14 z-40">
+        <div className="fixed left-3 top-16 z-40">
           <Link href={`/dashboard/${canEdit.organizationId}/branches/${canEdit.branchId}/page-editor`} className="rounded-full bg-slate-900 px-3 py-1.5 text-xs text-white shadow-lg">✏️ {t('editPage')}</Link>
         </div>
       )}
@@ -310,17 +419,20 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       )}
       {data.availability.mode === 'closed_notice' && (
         <div className="px-4 pt-6">
-          <div className={`tpl-surface mx-auto max-w-5xl p-5 text-center ${lay.card} ${lay.radius}`} data-testid="closed-notice">
-            <h2 className="text-xl font-semibold">{t('closedTitle')}</h2>
+          <div className="tpl-card mx-auto max-w-5xl p-5 text-center" data-testid="closed-notice">
+            <h2 className="tpl-heading text-xl">{t('closedTitle')}</h2>
             <p className="tpl-muted mt-2">{data.content.closedMessage ?? t('closedText')}</p>
             {data.branch.phone && <a className="tpl-primary mt-2 inline-block font-semibold" href={`tel:${data.branch.phone}`}>{formatPhone(data.branch.phone)}</a>}
           </div>
         </div>
       )}
 
-      <main>{data.template.sectionOrder.map((s) => sections[s]?.())}</main>
+      <main>{order.map((s) => sections[s]?.())}</main>
 
-      <footer className="tpl-muted px-4 py-8 pb-28 text-center text-xs">{data.branch.organizationName}</footer>
+      <footer className="tpl-muted border-t tpl-border px-4 pb-28 pt-8 text-center text-xs">
+        <div className="font-medium">{data.branch.organizationName}</div>
+        <Link href="/" className="mt-1 inline-block opacity-70 hover:opacity-100">{t('poweredBy')}</Link>
+      </footer>
 
       {bookingOpen && (pos === 'floating' || pos === 'bottom') && (
         <div className={pos === 'floating' ? 'fixed bottom-5 right-5 z-40' : 'fixed inset-x-0 bottom-0 z-40 border-t tpl-border p-3'} style={pos === 'bottom' ? { background: c.surface } : undefined}>

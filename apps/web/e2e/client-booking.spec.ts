@@ -102,7 +102,7 @@ test('публичная страница доступна на трёх язы�
     ['en', 'Book online'],
   ] as const) {
     await page.goto(`/${lang}/b/${SLUG}`);
-    await expect(page.getByTestId('book-button').first()).toHaveText(button);
+    await expect(page.getByTestId('book-button').first()).toHaveText(new RegExp(`^${button}`));
   }
   const res = await page.goto('/ru/b/no-such-branch-xyz');
   expect(res?.status()).toBe(404);
@@ -118,6 +118,6 @@ test('вход сотрудника: владелец видит записи в
   // На мобильном меню свёрнуто под кнопкой «☰».
   const menu = page.getByRole('button', { name: 'menu' });
   if (await menu.isVisible()) await menu.click();
-  await page.getByRole('link', { name: 'Записи', exact: true }).click();
+  await page.getByRole('navigation').getByRole('link', { name: 'Записи', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Записи', exact: true })).toBeVisible();
 });
