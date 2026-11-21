@@ -6,7 +6,7 @@ import { AppError } from '../common/errors';
 import { getConfig } from '../config/config';
 import { StorageService } from './storage.service';
 
-export const MEDIA_KINDS = ['logo', 'cover', 'gallery', 'service', 'specialist', 'template_preview'] as const;
+export const MEDIA_KINDS = ['logo', 'cover', 'gallery', 'service', 'specialist', 'resource', 'template_preview'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);

@@ -40,7 +40,7 @@ export class FilesController {
   @ApiBody(UPLOAD_BODY)
   @ApiOperation({ summary: 'Загрузить изображение (JPEG/PNG/WebP, до 5 МБ) — логотип, фото, услуги, специалисты' })
   async upload(@Tenant() t: TenantContext, @UploadedFile() file: Upload | undefined, @Body('kind') kind: string, @Actor() a: ActorContext) {
-    const canEdit = ['pages.edit', 'services.manage', 'specialists.manage'].some((p) => hasPermission(t.grant, p as 'pages.edit'));
+    const canEdit = ['pages.edit', 'services.manage', 'specialists.manage', 'resources.manage'].some((p) => hasPermission(t.grant, p as 'pages.edit'));
     if (!canEdit) throw AppError.forbidden();
     return this.media.upload(t.organizationId, parseKind(kind), file, a.userId);
   }
@@ -55,7 +55,7 @@ export class FilesController {
   @HttpCode(204)
   @AnyMember()
   async archive(@Tenant() t: TenantContext, @Param('id', ParseUUIDPipe) id: string) {
-    const canEdit = ['pages.edit', 'services.manage', 'specialists.manage'].some((p) => hasPermission(t.grant, p as 'pages.edit'));
+    const canEdit = ['pages.edit', 'services.manage', 'specialists.manage', 'resources.manage'].some((p) => hasPermission(t.grant, p as 'pages.edit'));
     if (!canEdit) throw AppError.forbidden();
     await this.media.archive(t.organizationId, id);
   }

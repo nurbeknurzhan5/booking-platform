@@ -50,6 +50,7 @@ export interface PublicPageData {
     photo: Record<string, string> | null;
   }>;
   specialists: Array<{ id: string; name: string; specialization: string | null; description: string | null; photo: Record<string, string> | null; serviceIds: string[] }>;
+  resources: Array<{ id: string; name: string; type: string; description: string | null; photo: Record<string, string> | null; serviceIds: string[] }>;
   reviews: { average: number | null; count: number; items: Array<{ id: string; rating: number; text: string | null; authorName: string; reply: string | null; createdAt: string }> };
   promotions: Array<{ id: string; kind: string; name: string; description: string | null; code: string | null; discountType: string; discountValue: number; endsAt: string | null }>;
 }

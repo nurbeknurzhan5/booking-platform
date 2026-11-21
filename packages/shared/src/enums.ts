@@ -114,6 +114,7 @@ export const PAGE_SECTIONS = [
   'gallery',
   'services',
   'specialists',
+  'resources',
   'promotions',
   'reviews',
   'schedule',

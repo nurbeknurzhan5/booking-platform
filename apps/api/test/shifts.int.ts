@@ -119,6 +119,20 @@ describe('График смен (задача 21)', () => {
     expect((await other.owner.put(u, { specialistIds: [] })).status).toBe(404);
   });
 
+  it('ресурсы на публичной странице: только отмеченные для показа, с тарифами (задача 22)', async () => {
+    const page = async () => (await new Http(ctx.app).get(`${API}/public/pages/${b.slug}`)).body;
+    let p = await page();
+    expect(p.resources).toEqual([]);
+    expect(p.template.sectionOrder).toContain('resources');
+    const res = `${API}/organizations/${b.orgId}/branches/${b.branchId}/resources/${b.cabinet}`;
+    expect((await b.owner.patch(res, { isPublic: true, description: 'Кушетка, музыка' })).status).toBe(200);
+    p = await page();
+    expect(p.resources).toEqual([expect.objectContaining({ name: 'Кабинет 1', type: 'cabinet', description: 'Кушетка, музыка', serviceIds: [b.services.massage] })]);
+    // частичное изменение не сбрасывает показ (регрессия PATCH)
+    expect((await b.owner.patch(res, { name: 'Кабинет «Релакс»' })).status).toBe(200);
+    expect((await page()).resources[0].name).toBe('Кабинет «Релакс»');
+  });
+
   it('проверки: перерыв вне смены, ресурс не специалист, чужая организация, права администратора', async () => {
     const anna = await resourceOf(b.specialists.anna);
     expect((await b.owner.put(url(), { resourceId: anna, date, startMinute: 600, endMinute: 900, breakStart: 960, breakEnd: 1000 })).status).toBe(400);

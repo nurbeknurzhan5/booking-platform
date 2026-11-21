@@ -30,6 +30,9 @@ interface Resource {
   name: string;
   type: string;
   description: string | null;
+  isPublic: boolean;
+  photoAssetId: string | null;
+  photoUrl?: string | null;
   isActive: boolean;
   sortOrder: number;
   services: Array<{ serviceId: string }>;
@@ -166,8 +169,12 @@ export function ResourcesTab({ branchId }: { branchId: string }) {
                 {TYPES.map((x) => <option key={x} value={x}>{st(x)}</option>)}
               </Select>
             </Field>
-            <Field label={t('description')}><Textarea rows={2} value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
-            <Checkbox checked={edit.isActive ?? true} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} label={t('active')} />
+            <Field label={t('description')} hint={t('resourceDescriptionHint')}><Textarea rows={3} value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
+            <Field label={t('photos')}><ImageUpload kind="resource" value={edit.photoAssetId} preview={edit.photoUrl ?? null} onChange={(id) => setEdit({ ...edit, photoAssetId: id })} /></Field>
+            <div className="flex flex-wrap gap-4">
+              <Checkbox checked={edit.isActive ?? true} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} label={t('active')} />
+              <Checkbox checked={edit.isPublic ?? false} onChange={(e) => setEdit({ ...edit, isPublic: e.target.checked })} label={t('showOnPage')} />
+            </div>
             <fieldset>
               <legend className="mb-1 text-xs font-medium text-slate-600">{t('services')}</legend>
               {(services.data ?? []).map((s) => (
@@ -182,7 +189,7 @@ export function ResourcesTab({ branchId }: { branchId: string }) {
                 onClick={async () => {
                   setError(null);
                   try {
-                    const body = { name: edit.name, description: edit.description || undefined, isActive: edit.isActive ?? true, serviceIds: edit.serviceIds };
+                    const body = { name: edit.name, description: edit.description || undefined, isActive: edit.isActive ?? true, isPublic: edit.isPublic ?? false, photoAssetId: edit.photoAssetId ?? null, serviceIds: edit.serviceIds };
                     if (edit.id) await api(`${base}/branches/${branchId}/resources/${edit.id}`, { method: 'PATCH', body });
                     else await api(`${base}/branches/${branchId}/resources`, { method: 'POST', body: { ...body, type: edit.type } });
                     setEdit(null);

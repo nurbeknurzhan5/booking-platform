@@ -10,6 +10,8 @@ async function main() {
     if (process.argv.includes('--demo')) {
       const { seedDemoData } = await import('../src/seed/demo-data');
       await seedDemoData(prisma);
+      const { seedDemoVenues } = await import('../src/seed/demo-venues');
+      await seedDemoVenues(prisma);
     }
     // eslint-disable-next-line no-console
     console.log('Seed completed');

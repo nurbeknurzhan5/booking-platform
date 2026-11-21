@@ -36,7 +36,7 @@ interface Editor {
   previouslyUsedTemplateIds: string[];
 }
 
-const SECTIONS = ['about', 'gallery', 'services', 'specialists', 'promotions', 'reviews', 'schedule', 'contacts', 'map', 'socials'];
+const SECTIONS = ['about', 'gallery', 'services', 'specialists', 'resources', 'promotions', 'reviews', 'schedule', 'contacts', 'map', 'socials'];
 type Tab = 'content' | 'design' | 'translations' | 'versions';
 
 export default function PageEditor() {

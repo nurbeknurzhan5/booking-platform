@@ -47,6 +47,8 @@ npm run dev:web      # http://localhost:3000
 - публичная страница: http://localhost:3000/ru/b/demo-salon;
 - владелец: `owner@demo.kz` / `DemoOwner12345`;
 - администратор филиала: `admin@demo.kz` / `DemoAdmin12345`;
+- компьютерный клуб «Пиксель» (ПК, VIP-ПК, залы PlayStation 5): http://localhost:3000/ru/b/demo-club, владелец `club@demo.kz` / `DemoOwner12345`;
+- банный комплекс «Тёплый берег» (финская сауна, русская баня, хаммам, пармейстер): http://localhost:3000/ru/b/demo-sauna, владелец `sauna@demo.kz` / `DemoOwner12345`;
 - в разработке коды OTP приходят в канал `dev_inbox`: `GET /api/v1/dev/inbox?phone=+7701…` (в production канал запрещён);
 - вернуть dev-базу к чистым демо-данным: `npm run db:reset:dev -w @booking/api -- --yes`. Команда удаляет все данные, кроме учётных записей суперадминистраторов (пароль и MFA сохраняются). В production запрещена.
 

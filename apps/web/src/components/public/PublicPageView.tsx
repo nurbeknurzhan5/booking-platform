@@ -72,6 +72,18 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     return [...groups.entries()];
   }, [data.services]);
 
+  // Одинаковые места (ПК 1…6 с одним описанием и фото) показываются одной карточкой «ПК · 6 мест».
+  const resourceGroups = useMemo(() => {
+    const groups = new Map<string, { r: (typeof data.resources)[number]; count: number; name: string }>();
+    for (const r of data.resources ?? []) {
+      const key = [r.type, r.description ?? '', r.photo?.medium ?? '', [...r.serviceIds].sort().join(',')].join('|');
+      const g = groups.get(key);
+      if (g) g.count++;
+      else groups.set(key, { r, count: 1, name: r.name });
+    }
+    return [...groups.values()].map((g) => ({ ...g, name: g.count > 1 ? g.name.replace(/\s*№?\d+$/, '') : g.name }));
+  }, [data.resources]);
+
   const Section = ({ id, title, children }: { id: string; title: string; children: ReactNode }) => (
     <section id={id} className={`${lay.section} px-4`}>
       <div className="mx-auto max-w-5xl">
@@ -141,6 +153,39 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
         {pos === 'after_services' && <div className="mt-6 text-center"><BookButton big /></div>}
       </Section>
     ),
+    resources: () =>
+      data.resources?.length ? (
+        <Section key="resources" id="resources" title={t('resourcesTitle')}>
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="public-resources">
+            {resourceGroups.map(({ r, count, name }) => {
+              const tariffs = data.services.filter((s) => r.serviceIds.includes(s.id));
+              return (
+                <li key={r.id} className={`tpl-surface overflow-hidden ${lay.card} ${lay.radius}`}>
+                  {r.photo && <img src={r.photo.medium} alt="" loading="lazy" className="aspect-[3/2] w-full object-cover" />}
+                  <div className="p-4">
+                    <div className="tpl-muted text-xs uppercase tracking-wide">
+                      {t(`rt_${r.type}` as Parameters<typeof pt>[1])}
+                      {count > 1 && ` · ${count} ${t('placesCount')}`}
+                    </div>
+                    <div className="mt-0.5 text-lg font-semibold">{name}</div>
+                    {r.description && <p className="tpl-muted mt-1 whitespace-pre-line text-sm">{r.description}</p>}
+                    {tariffs.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-sm">
+                        {tariffs.map((s) => (
+                          <li key={s.id} className="flex justify-between gap-3">
+                            <span>{s.name}</span>
+                            <b className="whitespace-nowrap">{money(s.price)}</b>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Section>
+      ) : null,
     specialists: () =>
       data.specialists.length ? (
         <Section key="specialists" id="specialists" title={t('specialists')}>

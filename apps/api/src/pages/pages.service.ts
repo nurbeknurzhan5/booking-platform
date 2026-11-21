@@ -1,3 +1,4 @@
+import type { PageSection } from '@booking/shared';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import {
@@ -39,6 +40,13 @@ interface RenderSource {
 }
 
 /** Публичные страницы филиалов (§13): черновик → предпросмотр → публикация, история версий, шаблоны, переводы. */
+/** Раздел «залы и оборудование» появился позже шаблонов: если в шаблоне его нет — после специалистов (или услуг). */
+function withResourcesSection(order: PageSection[]): PageSection[] {
+  if (order.includes('resources')) return order;
+  const at = order.indexOf('specialists') >= 0 ? order.indexOf('specialists') : order.indexOf('services');
+  return at < 0 ? [...order, 'resources'] : [...order.slice(0, at + 1), 'resources', ...order.slice(at + 1)];
+}
+
 @Injectable()
 export class PagesService {
   constructor(
@@ -390,7 +398,7 @@ export class PagesService {
       return source;
     };
 
-    const [services, specialists, schedule, reviews, promotions] = await Promise.all([
+    const [services, specialists, schedule, reviews, promotions, publicResources] = await Promise.all([
       this.prisma.service.findMany({
         where: { organizationId: branch.organizationId, archivedAt: null, isActive: true, branchServices: { some: { branchId, isActive: true } } },
         include: { category: true, branchServices: { where: { branchId } } },
@@ -404,6 +412,12 @@ export class PagesService {
       this.prisma.workingHours.findMany({ where: { branchId, resourceId: null }, orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }] }),
       this.reviews.publicSummary(branchId),
       this.promotions.publicForBranch(branch.organizationId, branchId),
+      // Места, залы и оборудование, отмеченные для показа (задача 22)
+      this.prisma.resource.findMany({
+        where: { branchId, archivedAt: null, isActive: true, isPublic: true, type: { not: 'specialist' } },
+        include: { services: { select: { serviceId: true } } },
+        orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+      }),
     ]);
 
     const trMap = await this.translations.mapFor(branch.organizationId, lang, [
@@ -429,6 +443,7 @@ export class PagesService {
       ...src.content.galleryAssetIds,
       ...services.map((s) => s.photoAssetId),
       ...specialists.map((s) => s.photoAssetId),
+      ...publicResources.map((r) => r.photoAssetId),
     ].filter((x): x is string => !!x);
     const urls = await this.media.urlsFor([...new Set(assetIds)]);
     const img = (id: string | null | undefined) => (id ? (urls.get(id) ?? null) : null);
@@ -465,6 +480,14 @@ export class PagesService {
       photo: img(s.photoAssetId),
       serviceIds: s.services.map((x) => x.serviceId),
     }));
+    const resourcesView = publicResources.map((r) => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      description: r.description,
+      photo: img(r.photoAssetId),
+      serviceIds: r.services.map((x) => x.serviceId).filter((id) => services.some((s) => s.id === id)),
+    }));
     const promotionsView = promotions.map((p) => ({ ...p, name: tr('promotion', p.id, 'name', p.name), description: tr('promotion', p.id, 'description', p.description) }));
 
     return {
@@ -484,7 +507,7 @@ export class PagesService {
       template: {
         key: tplVersion.template.key,
         layout: config.layout,
-        sectionOrder: config.sectionOrder.filter((s) => !src.content.hiddenSections.includes(s)),
+        sectionOrder: withResourcesSection(config.sectionOrder).filter((s) => !src.content.hiddenSections.includes(s)),
         colors: scheme,
         bookingButtonPosition: src.bookingButtonPosition,
       },
@@ -516,6 +539,7 @@ export class PagesService {
       })),
       services: servicesView,
       specialists: specialistsView,
+      resources: resourcesView,
       reviews,
       promotions: promotionsView,
     };

@@ -34,6 +34,7 @@ export const BUSINESS_CATEGORIES = [
   ['car_wash', 'Автомойка', 'Көлік жуу', 'Car wash'],
   ['detailing', 'Детейлинг-центр', 'Детейлинг орталығы', 'Detailing'],
   ['car_service', 'Автосервис', 'Автосервис', 'Car service'],
+  ['computer_club', 'Компьютерный клуб', 'Компьютерлік клуб', 'Computer club'],
   ['other', 'Другое', 'Басқа', 'Other'],
 ] as const;
 

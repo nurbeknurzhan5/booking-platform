@@ -9,6 +9,7 @@ import { PrismaClient } from '../src/generated/prisma/client';
 import { createPgAdapter } from '../src/common/prisma.service';
 import { seedReferenceData } from '../src/seed/reference-data';
 import { seedDemoData } from '../src/seed/demo-data';
+import { seedDemoVenues } from '../src/seed/demo-venues';
 
 async function main() {
   if (process.env.APP_ENV === 'production') throw new Error('Сброс запрещён в production (APP_ENV=production)');
@@ -23,6 +24,7 @@ async function main() {
     for (const a of admins) await prisma.user.create({ data: { ...a, failedLoginCount: 0, lockedUntil: null } });
     await seedReferenceData(prisma);
     await seedDemoData(prisma);
+    await seedDemoVenues(prisma);
     // eslint-disable-next-line no-console
     console.log(`Готово: демо-данные загружены, суперадминистраторов сохранено: ${admins.length}`);
   } finally {
