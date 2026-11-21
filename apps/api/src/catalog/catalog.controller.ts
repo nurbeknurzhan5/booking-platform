@@ -6,6 +6,7 @@ import {
   ScheduleExceptionInputSchema,
   ServiceCategoryInputSchema,
   ServiceInputSchema,
+  ServiceSpecialistsSchema,
   SpecialistInputSchema,
   UpdateResourceSchema,
   UpdateServiceSchema,
@@ -23,6 +24,7 @@ class UpdateServiceDto extends createZodDto(UpdateServiceSchema) {}
 class CategoryDto extends createZodDto(ServiceCategoryInputSchema) {}
 class SpecialistDto extends createZodDto(SpecialistInputSchema) {}
 class UpdateSpecialistDto extends createZodDto(UpdateSpecialistSchema) {}
+class ServiceSpecialistsDto extends createZodDto(ServiceSpecialistsSchema) {}
 class ResourceDto extends createZodDto(ResourceInputSchema) {}
 class UpdateResourceDto extends createZodDto(UpdateResourceSchema) {}
 class WeeklyDto extends createZodDto(WeeklyScheduleSchema) {}
@@ -111,6 +113,19 @@ export class SpecialistsController {
   @ApiOperation({ summary: 'Создать специалиста в филиале' })
   create(@Tenant() t: TenantContext, @Param('branchId') branchId: string, @Body() body: SpecialistDto, @Actor() a: ActorContext) {
     return this.resources.createSpecialist(t, branchId, body, a);
+  }
+
+  @Put('by-service/:serviceId')
+  @RequirePermission('specialists.manage')
+  @ApiOperation({ summary: 'Назначить специалистов филиала на услугу (остальные снимаются)' })
+  setForService(
+    @Tenant() t: TenantContext,
+    @Param('branchId') branchId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @Body() body: ServiceSpecialistsDto,
+    @Actor() a: ActorContext,
+  ) {
+    return this.resources.setServiceSpecialists(t, branchId, serviceId, body.specialistIds, a);
   }
 
   @Get(':specialistId')

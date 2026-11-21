@@ -38,6 +38,7 @@ export const ERROR_CODES = [
   'WAITLIST_LIMIT',
   'WAITLIST_OFFER_EXPIRED',
   'WAITLIST_OFFER_CLOSED',
+  'SHIFT_CONFLICT',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

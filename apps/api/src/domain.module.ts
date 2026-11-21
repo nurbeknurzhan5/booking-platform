@@ -9,6 +9,8 @@ import { ResourcesController, SchedulesController, ServicesController, Specialis
 import { ServicesService } from './catalog/services.service';
 import { ResourcesService } from './catalog/resources.service';
 import { SchedulesService } from './catalog/schedules.service';
+import { ShiftsService } from './catalog/shifts.service';
+import { ShiftsController } from './catalog/shifts.controller';
 import { AvailabilityService } from './booking/availability.service';
 import { BookingService } from './booking/booking.service';
 import { RemindersService } from './booking/reminders.service';
@@ -49,6 +51,7 @@ import { PagesController } from './pages/pages.controller';
     SpecialistsController,
     ResourcesController,
     SchedulesController,
+    ShiftsController,
     PublicBookingController,
     StaffAppointmentsController,
     PublicWaitlistController,
@@ -75,6 +78,7 @@ import { PagesController } from './pages/pages.controller';
     ServicesService,
     ResourcesService,
     SchedulesService,
+    ShiftsService,
     AvailabilityService,
     BookingService,
     WaitlistService,

@@ -131,12 +131,12 @@ model User {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  sessions      UserSession[]
-  orgRoles      UserOrganizationRole[]
-  branchAccess  UserBranchAccess[]
-  clients       Client[]
-  auditLogs     AuditLog[]
-  consents      ClientConsent[]
+  sessions     UserSession[]
+  orgRoles     UserOrganizationRole[]
+  branchAccess UserBranchAccess[]
+  clients      Client[]
+  auditLogs    AuditLog[]
+  consents     ClientConsent[]
 
   @@map("users")
 }
@@ -185,12 +185,12 @@ model OtpCode {
 }
 
 model Role {
-  code        String           @id @db.VarChar(30)
-  name        String           @db.VarChar(100)
+  code        String                 @id @db.VarChar(30)
+  name        String                 @db.VarChar(100)
   permissions RolePermission[]
   orgRoles    UserOrganizationRole[]
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("roles")
 }
@@ -433,22 +433,23 @@ model Branch {
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz(3)
 
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  access             UserBranchAccess[]
-  bookingSettings    BookingSettings?
-  branchServices     BranchService[]
-  resources          Resource[]
-  specialists        Specialist[]
-  workingHours       WorkingHours[]
-  breaks             Break[]
-  exceptions         ScheduleException[]
-  appointments       Appointment[]
-  page               PublicPage?
-  reviews            Review[]
-  waitlist           WaitlistEntry[]
-  waitlistReleases   WaitlistRelease[]
-  analyticsEvents    AnalyticsEvent[]
-  analyticsDaily     AnalyticsDailyAggregate[]
+  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  access           UserBranchAccess[]
+  bookingSettings  BookingSettings?
+  shifts           StaffShift[]
+  branchServices   BranchService[]
+  resources        Resource[]
+  specialists      Specialist[]
+  workingHours     WorkingHours[]
+  breaks           Break[]
+  exceptions       ScheduleException[]
+  appointments     Appointment[]
+  page             PublicPage?
+  reviews          Review[]
+  waitlist         WaitlistEntry[]
+  waitlistReleases WaitlistRelease[]
+  analyticsEvents  AnalyticsEvent[]
+  analyticsDaily   AnalyticsDailyAggregate[]
 
   @@unique([organizationId, id])
   @@index([organizationId])
@@ -482,6 +483,8 @@ model BookingSettings {
   waitlistPriority               String           @default("fifo") @map("waitlist_priority") @db.VarChar(20)
   /// offer_next | release
   waitlistAfterExpiry            String           @default("offer_next") @map("waitlist_after_expiry") @db.VarChar(20)
+  /// weekly — специалисты работают по недельному графику; shifts — только в назначенные смены (задача 21)
+  scheduleMode                   String           @default("weekly") @map("schedule_mode") @db.VarChar(10)
   createdAt                      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -584,6 +587,9 @@ model Resource {
   type           ResourceType
   name           String       @db.VarChar(200)
   description    String?
+  /// Показывать на публичной странице (места, залы, оборудование — задача 22). Специалисты показываются через свою карточку.
+  isPublic       Boolean      @default(false) @map("is_public")
+  photoAssetId   String?      @map("photo_asset_id") @db.Uuid
   isActive       Boolean      @default(true) @map("is_active")
   sortOrder      Int          @default(0) @map("sort_order")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -591,6 +597,8 @@ model Resource {
   archivedAt     DateTime?    @map("archived_at") @db.Timestamptz(3)
 
   branch       Branch                @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  photo        MediaAsset?           @relation(fields: [organizationId, photoAssetId], references: [organizationId, id], onDelete: Restrict)
+  shifts       StaffShift[]
   specialist   Specialist?
   services     ResourceService[]
   workingHours WorkingHours[]
@@ -728,6 +736,29 @@ model ScheduleException {
   @@map("schedule_exceptions")
 }
 
+/// Смена специалиста на дату (режим графика «по сменам»). Время — минуты от полуночи по часовому поясу филиала.
+model StaffShift {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  resourceId      String   @map("resource_id") @db.Uuid
+  date            DateTime @db.Date
+  startMinute     Int      @map("start_minute")
+  endMinute       Int      @map("end_minute")
+  breakStart      Int?     @map("break_start")
+  breakEnd        Int?     @map("break_end")
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch   Branch   @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Restrict)
+  resource Resource @relation(fields: [organizationId, branchId, resourceId], references: [organizationId, branchId, id], onDelete: Restrict)
+
+  @@unique([resourceId, date])
+  @@index([branchId, date])
+  @@map("staff_shifts")
+}
+
 // ================= КЛИЕНТЫ И ЗАПИСИ (§20.4) =================
 
 /// Карточка клиента внутри организации. Платформенный профиль — users (решение D-10).
@@ -837,26 +868,26 @@ model Appointment {
 }
 
 model AppointmentItem {
-  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId         String    @map("organization_id") @db.Uuid
-  appointmentId          String    @map("appointment_id") @db.Uuid
-  serviceId              String    @map("service_id") @db.Uuid
-  specialistId           String?   @map("specialist_id") @db.Uuid
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String   @map("organization_id") @db.Uuid
+  appointmentId          String   @map("appointment_id") @db.Uuid
+  serviceId              String   @map("service_id") @db.Uuid
+  specialistId           String?  @map("specialist_id") @db.Uuid
   position               Int
-  startAt                DateTime  @map("start_at") @db.Timestamptz(3)
-  endAt                  DateTime  @map("end_at") @db.Timestamptz(3)
-  durationMinutes        Int       @map("duration_minutes")
-  bufferBeforeMinutes    Int       @map("buffer_before_minutes")
-  bufferAfterMinutes     Int       @map("buffer_after_minutes")
-  serviceNameSnapshot    String    @map("service_name_snapshot") @db.VarChar(200)
-  specialistNameSnapshot String?   @map("specialist_name_snapshot") @db.VarChar(200)
-  basePrice              Int       @map("base_price")
-  saleDiscount           Int       @default(0) @map("sale_discount")
-  salePromotionId        String?   @map("sale_promotion_id") @db.Uuid
-  promoDiscount          Int       @default(0) @map("promo_discount")
-  finalPrice             Int       @map("final_price")
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  startAt                DateTime @map("start_at") @db.Timestamptz(3)
+  endAt                  DateTime @map("end_at") @db.Timestamptz(3)
+  durationMinutes        Int      @map("duration_minutes")
+  bufferBeforeMinutes    Int      @map("buffer_before_minutes")
+  bufferAfterMinutes     Int      @map("buffer_after_minutes")
+  serviceNameSnapshot    String   @map("service_name_snapshot") @db.VarChar(200)
+  specialistNameSnapshot String?  @map("specialist_name_snapshot") @db.VarChar(200)
+  basePrice              Int      @map("base_price")
+  saleDiscount           Int      @default(0) @map("sale_discount")
+  salePromotionId        String?  @map("sale_promotion_id") @db.Uuid
+  promoDiscount          Int      @default(0) @map("promo_discount")
+  finalPrice             Int      @map("final_price")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   appointment Appointment           @relation(fields: [organizationId, appointmentId], references: [organizationId, id], onDelete: Cascade)
   service     Service               @relation(fields: [organizationId, serviceId], references: [organizationId, id], onDelete: Restrict)
@@ -1235,6 +1266,7 @@ model MediaAsset {
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   services     Service[]
   specialists  Specialist[]
+  resources    Resource[]
 
   @@unique([organizationId, id])
   @@index([organizationId, kind])
@@ -1309,9 +1341,9 @@ model NotificationOutbox {
   createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event    NotificationEvent         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  event       NotificationEvent       @relation(fields: [eventId], references: [id], onDelete: Restrict)
   attemptsLog NotificationAttempt[]
-  statuses WhatsappMessageStatus[]
+  statuses    WhatsappMessageStatus[]
 
   @@index([status, nextAttemptAt])
   @@index([organizationId, createdAt])
@@ -1517,19 +1549,19 @@ model AnalyticsEvent {
 }
 
 model AnalyticsDailyAggregate {
-  organizationId   String   @map("organization_id") @db.Uuid
-  branchId         String   @map("branch_id") @db.Uuid
-  date             DateTime @db.Date
-  pageViews        Int      @default(0) @map("page_views")
-  uniqueVisitors   Int      @default(0) @map("unique_visitors")
-  bookingClicks    Int      @default(0) @map("booking_clicks")
-  bookingStarts    Int      @default(0) @map("booking_starts")
-  bookingsCreated  Int      @default(0) @map("bookings_created")
-  cancellations    Int      @default(0)
+  organizationId  String   @map("organization_id") @db.Uuid
+  branchId        String   @map("branch_id") @db.Uuid
+  date            DateTime @db.Date
+  pageViews       Int      @default(0) @map("page_views")
+  uniqueVisitors  Int      @default(0) @map("unique_visitors")
+  bookingClicks   Int      @default(0) @map("booking_clicks")
+  bookingStarts   Int      @default(0) @map("booking_starts")
+  bookingsCreated Int      @default(0) @map("bookings_created")
+  cancellations   Int      @default(0)
   /// { "<utm_source|referrer|direct>": { views, uniques, bookings } }
-  sources          Json     @default("{}")
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  sources         Json     @default("{}")
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   branch Branch @relation(fields: [organizationId, branchId], references: [organizationId, id], onDelete: Cascade)
 

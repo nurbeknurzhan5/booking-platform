@@ -192,11 +192,46 @@ export const ResourceInputSchema = z.object({
   name: zName,
   type: z.enum(RESOURCE_TYPES).exclude(['specialist']),
   description: zText.optional(),
+  /** Показывать на публичной странице: места, залы, оборудование. */
+  isPublic: z.boolean().default(false),
+  photoAssetId: zId.nullable().optional(),
   isActive: z.boolean().default(true),
   serviceIds: z.array(zId).max(500).default([]),
   sortOrder: z.number().int().min(0).default(0),
 });
 export const UpdateResourceSchema = updateSchemaOf(ResourceInputSchema).omit({ type: true });
+
+// ---------- смены (задача 21) ----------
+export const SCHEDULE_MODES = ['weekly', 'shifts'] as const;
+const zMinute = z.number().int().min(0).max(1440);
+/** Смена специалиста на дату; force — подтвердить, несмотря на записи вне новой смены. */
+export const ShiftUpsertSchema = z
+  .object({
+    resourceId: zId,
+    date: zDate,
+    startMinute: zMinute,
+    endMinute: zMinute,
+    breakStart: zMinute.nullable().optional(),
+    breakEnd: zMinute.nullable().optional(),
+    force: z.boolean().default(false),
+  })
+  .refine((v) => v.endMinute > v.startMinute, { message: 'Окончание смены должно быть позже начала', path: ['endMinute'] })
+  .refine((v) => (v.breakStart === null || v.breakStart === undefined) === (v.breakEnd === null || v.breakEnd === undefined), { message: 'Укажите начало и конец перерыва', path: ['breakEnd'] })
+  .refine((v) => v.breakStart === null || v.breakStart === undefined || (v.breakStart >= v.startMinute && v.breakEnd! <= v.endMinute && v.breakEnd! > v.breakStart), {
+    message: 'Перерыв должен быть внутри смены',
+    path: ['breakStart'],
+  });
+export const ShiftDeleteSchema = z.object({ resourceId: zId, date: zDate, force: z.boolean().default(false) });
+export const ShiftRangeQuerySchema = z
+  .object({ from: zDate, to: zDate })
+  .refine((v) => v.from <= v.to, { message: 'Неверный период', path: ['to'] })
+  .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86400_000 <= 62, { message: 'Не больше 62 дней', path: ['to'] });
+/** Заполнить смены по недельному графику на период (существующие смены не трогаются, если overwrite = false). */
+export const ShiftFillSchema = z
+  .object({ from: zDate, to: zDate, resourceIds: z.array(zId).max(200).optional(), overwrite: z.boolean().default(false) })
+  .refine((v) => v.from <= v.to && (Date.parse(v.to) - Date.parse(v.from)) / 86400_000 <= 62, { message: 'Период до 62 дней', path: ['to'] });
+/** Скопировать смены дня на другие даты. */
+export const ShiftCopySchema = z.object({ fromDate: zDate, toDates: z.array(zDate).min(1).max(62), overwrite: z.boolean().default(false) });
 
 export const SpecialistInputSchema = z.object({
   name: zName,
@@ -212,6 +247,8 @@ export const SpecialistInputSchema = z.object({
     .default([]),
 });
 export const UpdateSpecialistSchema = updateSchemaOf(SpecialistInputSchema);
+/** Какие специалисты филиала оказывают услугу (назначение из карточки услуги). */
+export const ServiceSpecialistsSchema = z.object({ specialistIds: z.array(zId).max(500) });
 
 // ---------- расписание ----------
 export const WeeklyScheduleSchema = z.object({
@@ -265,6 +302,8 @@ export const BookingSettingsSchema = z.object({
   waitlistRecipients: z.number().int().min(1).max(10).optional(),
   waitlistPriority: z.enum(WAITLIST_PRIORITY_MODES).optional(),
   waitlistAfterExpiry: z.enum(WAITLIST_AFTER_EXPIRY).optional(),
+  /** weekly — по недельному графику; shifts — специалисты работают только в назначенные смены (задача 21). */
+  scheduleMode: z.enum(SCHEDULE_MODES).optional(),
 });
 export type BookingSettings = z.infer<typeof BookingSettingsSchema>;
 
@@ -290,6 +329,7 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettings = {
   waitlistRecipients: 3,
   waitlistPriority: 'fifo',
   waitlistAfterExpiry: 'offer_next',
+  scheduleMode: 'weekly',
 };
 
 // ---------- бронирование ----------

@@ -34,7 +34,13 @@ interface Category {
 }
 
 const RESOURCE_TYPES = ['cabinet', 'hall', 'equipment', 'vehicle', 'service_bay', 'other'];
-type Draft = Omit<Service, 'id' | 'category' | 'photo'> & { id?: string };
+type Draft = Omit<Service, 'id' | 'category' | 'photo'> & { id?: string; specialistIds: string[] };
+interface SpecialistLite {
+  id: string;
+  name: string;
+  isActive: boolean;
+  services: Array<{ serviceId: string }>;
+}
 
 const empty = (branchId: string | null): Draft => ({
   name: '',
@@ -51,6 +57,7 @@ const empty = (branchId: string | null): Draft => ({
   sortOrder: 0,
   branchServices: branchId ? [{ branchId, priceOverride: null }] : [],
   requirements: [],
+  specialistIds: [],
 });
 
 export default function ServicesPage() {
@@ -58,6 +65,13 @@ export default function ServicesPage() {
   const { t, st } = useT();
   const services = useApi<Service[]>(`${base}/services`);
   const categories = useApi<Category[]>(`${base}/service-categories`);
+  // Специалисты выбранного филиала: назначение на услугу прямо из её карточки
+  const specialists = useApi<SpecialistLite[]>(branchId ? `${base}/branches/${branchId}/specialists` : null);
+  const branch = branches.find((b) => b.id === branchId);
+  const canAssign = !!branchId && can('specialists.manage', branchId) && canManage;
+  const openEdit = (s: Service) =>
+    setEdit({ ...s, categoryId: s.categoryId, specialistIds: (specialists.data ?? []).filter((x) => x.services.some((y) => y.serviceId === s.id)).map((x) => x.id) });
+  const specialistsOf = (serviceId: string) => (specialists.data ?? []).filter((x) => x.services.some((y) => y.serviceId === serviceId)).map((x) => x.name);
   const [edit, setEdit] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,10 +99,14 @@ export default function ServicesPage() {
       branches: edit.branchServices.map((b) => ({ branchId: b.branchId, priceOverride: b.priceOverride === null || (b.priceOverride as unknown) === '' ? null : Number(b.priceOverride) })),
     };
     try {
+      const id = edit.id ?? (await api<{ id: string }>(`${base}/services`, { method: 'POST', body })).id;
       if (edit.id) await api(`${base}/services/${edit.id}`, { method: 'PATCH', body });
-      else await api(`${base}/services`, { method: 'POST', body });
+      // Назначение специалистов выбранного филиала, если услуга в нём оказывается
+      if (canAssign && edit.requiresSpecialist && edit.branchServices.some((b) => b.branchId === branchId)) {
+        await api(`${base}/branches/${branchId}/specialists/by-service/${id}`, { method: 'PUT', body: { specialistIds: edit.specialistIds } });
+      }
       setEdit(null);
-      await services.reload();
+      await Promise.all([services.reload(), specialists.reload()]);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -101,13 +119,14 @@ export default function ServicesPage() {
       <PageHeader title={t('services')} actions={canEdit && <Button onClick={() => setEdit(empty(branchId))} data-testid="add-service">+ {t('add')}</Button>} />
       <Card>
         {services.loading ? <Spinner /> : (
-          <Table head={[t('name'), t('category'), t('duration'), t('price'), t('branches'), t('status')]} empty={!services.data?.length}>
+          <Table head={[t('name'), t('category'), t('duration'), t('price'), t('specialists'), t('branches'), t('status')]} empty={!services.data?.length}>
             {(services.data ?? []).map((s) => (
-              <tr key={s.id} className={canEdit ? 'cursor-pointer hover:bg-slate-50' : ''} onClick={() => canEdit && setEdit({ ...s, categoryId: s.categoryId })}>
+              <tr key={s.id} className={canEdit ? 'cursor-pointer hover:bg-slate-50' : ''} onClick={() => canEdit && openEdit(s)}>
                 <Td><div className="font-medium">{s.name}</div>{s.requirements.length > 0 && <div className="text-xs text-slate-500">{s.requirements.map((r) => `${st(r.resourceType)} × ${r.quantity}`).join(', ')}</div>}</Td>
                 <Td>{s.category?.name ?? '—'}</Td>
                 <Td>{minutesLabel(s.durationMinutes)}</Td>
                 <Td>{money(s.price)}</Td>
+                <Td className="text-xs">{s.requiresSpecialist ? specialistsOf(s.id).join(', ') || <span className="text-amber-700">{t('noSpecialistsYet')}</span> : '—'}</Td>
                 <Td>{s.branchServices.map((b) => branches.find((x) => x.id === b.branchId)?.name).filter(Boolean).join(', ')}</Td>
                 <Td>{s.isActive ? <Badge tone="green">{t('active')}</Badge> : <Badge>—</Badge>}{!s.onlineBookingEnabled && <Badge tone="amber">{t('onlineBookingOff')}</Badge>}</Td>
               </tr>
@@ -173,6 +192,25 @@ export default function ServicesPage() {
                 })}
               </div>
             </fieldset>
+            {canAssign && edit.requiresSpecialist && edit.branchServices.some((b) => b.branchId === branchId) && (
+              <fieldset data-testid="service-specialists">
+                <legend className="mb-1 text-xs font-medium text-slate-600">{t('specialistsInBranch')}: {branch?.name}</legend>
+                {(specialists.data ?? []).length === 0 ? (
+                  <p className="text-sm text-slate-500">{t('noSpecialistsInBranch')}</p>
+                ) : (
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {(specialists.data ?? []).map((sp) => (
+                      <Checkbox
+                        key={sp.id}
+                        checked={edit.specialistIds.includes(sp.id)}
+                        onChange={(e) => setEdit({ ...edit, specialistIds: e.target.checked ? [...edit.specialistIds, sp.id] : edit.specialistIds.filter((x) => x !== sp.id) })}
+                        label={sp.isActive ? sp.name : `${sp.name} (${t('inactive')})`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            )}
             <fieldset>
               <legend className="mb-1 text-xs font-medium text-slate-600">{t('branches')} / {t('price')}</legend>
               {branches.map((b) => {

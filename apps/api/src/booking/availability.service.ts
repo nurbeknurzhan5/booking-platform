@@ -7,6 +7,7 @@ import {
   dayWindows,
   findAssignment,
   intersect,
+  shiftWindows,
   type EngineResource,
   type EngineService,
   type EngineSettings,
@@ -126,6 +127,10 @@ export class AvailabilityService {
     const [hours, breaks, exceptions] = parallel
       ? await Promise.all([q[0](), q[1](), q[2]()])
       : [await q[0](), await q[1](), await q[2]()];
+    // Режим «по сменам» (задача 21): специалист работает только в назначенную на эту дату смену.
+    const shiftsMode = settings.scheduleMode === 'shifts';
+    const specialistResIds = resRows.filter((r) => r.type === 'specialist').map((r) => r.id);
+    const shifts = shiftsMode && specialistResIds.length ? await db.staffShift.findMany({ where: { branchId, date: dateObj, resourceId: { in: specialistResIds } } }) : [];
     const srcFor = (resourceId: string | null): ScheduleSource => ({
       hours: hours.filter((h) => h.resourceId === resourceId).map((h) => ({ weekday: h.weekday, start: h.startMinute, end: h.endMinute })),
       breaks: breaks.filter((b) => b.resourceId === resourceId).map((b) => ({ weekday: b.weekday, start: b.startMinute, end: b.endMinute })),
@@ -146,7 +151,11 @@ export class AvailabilityService {
     const specialistNames = new Map<string, string>();
 
     const resources: EngineResource[] = resRows.map((r) => {
-      const own = dayWindows(srcFor(r.id), date, branch.timezone, branchWindows);
+      let own = dayWindows(srcFor(r.id), date, branch.timezone, branchWindows);
+      if (shiftsMode && r.type === 'specialist') {
+        const shift = shifts.find((x) => x.resourceId === r.id);
+        own = shift ? shiftWindows(shift, date, branch.timezone) : [];
+      }
       let serviceSet: Set<string>;
       if (r.type === 'specialist' && r.specialist) {
         serviceSet = new Set(r.specialist.services.map((s) => s.serviceId));

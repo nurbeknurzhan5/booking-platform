@@ -93,6 +93,15 @@ test('владелец настраивает новый филиал с нул�
   await page.getByTestId('save-schedule').click();
   await expect(page.getByText('Сохранено')).toBeVisible();
 
+  // 4а. Режим смен: без смен записи нет; заполнение по недельному графику (задача 21)
+  await page.goto(`/dashboard/${orgId}/schedule`);
+  await page.getByTestId('switch-schedule-mode').click();
+  await expect(page.getByTestId('tomorrow-not-filled')).toBeVisible();
+  await page.getByTestId('fill-weekly').click();
+  await expect(page.getByTestId('tomorrow-not-filled')).toBeHidden();
+  const tomorrow = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(new Date(Date.now() + 86400_000));
+  await expect(page.getByTestId(`shift-${masterName}-${tomorrow}`)).toContainText('10:00');
+
   // 5. Публикация страницы
   await page.goto(`/dashboard/${orgId}/branches/${branchId}/page-editor`);
   await page.getByTestId('page-title').fill(branchName);
@@ -124,6 +133,15 @@ test('владелец настраивает новый филиал с нул�
   await expect(cp.getByTestId('booking-done')).toBeVisible();
   await expect(cp.getByTestId('booking-done')).toContainText(serviceName);
   await client.close();
+
+  // 6а. Снять мастера со смены на день записи — предупреждение со списком записей, затем подтверждение
+  await page.goto(`/dashboard/${orgId}/schedule`);
+  await page.getByTestId(`shift-${masterName}-${tomorrow}`).click();
+  await page.getByTestId('shift-remove').click();
+  await expect(page.getByTestId('shift-conflicts')).toContainText('Первый Клиент');
+  await page.getByTestId('shift-force').click();
+  await expect(page.getByTestId(`shift-${masterName}-${tomorrow}`)).toHaveText('—');
+  await expect(page.getByText('Есть записи вне смен').first()).toBeVisible();
 
   // 7. Запись видна владельцу; уборка: отмена записи и архивация филиала через интерфейс
   const appts = (await (await page.request.get(`${API}/organizations/${orgId}/appointments?branchId=${branchId}&status=confirmed&pageSize=10`)).json()) as { items: Array<{ id: string; client: { phone: string } }> };

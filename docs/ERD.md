@@ -1,6 +1,6 @@
 # Модель данных (ERD)
 
-Полная схема описана в `apps/api/prisma/schema.prisma`: 56 таблиц. Ограничения, которые Prisma не выражает, добавлены ручными миграциями `prisma/migrations/*_constraints` и `*_review_merge`.
+Полная схема описана в `apps/api/prisma/schema.prisma`: 57 таблиц. Ограничения, которые Prisma не выражает, добавлены ручными миграциями `prisma/migrations/*_constraints` и `*_review_merge`.
 
 ## Основные связи
 
@@ -48,6 +48,7 @@ erDiagram
   branches ||--o{ analytics_daily_aggregates : ""
   clients ||--o{ waitlist_entries : "waitlist request"
   branches ||--o{ waitlist_releases : "freed time (cancel/reschedule)"
+  resources ||--o{ staff_shifts : "shift per date (schedule mode: shifts)"
   waitlist_releases ||--o{ waitlist_offers : "rounds of offers"
   waitlist_entries ||--o{ waitlist_offers : ""
 ```
@@ -70,6 +71,7 @@ erDiagram
 | `branches.slug UNIQUE` | Постоянная ссылка страницы |
 | `promotions (organization_id, code) UNIQUE` | Уникальность промокода |
 | CHECK: время `end > start`, цены ≥ 0, рейтинг 1–5, день недели 1–7, минуты 0–1440, процент ≤ 100, период подписки | Корректность данных |
+| `staff_shifts (resource_id, date) UNIQUE`, CHECK времени и перерыва | Одна смена специалиста на дату, перерыв внутри смены |
 | `waitlist_offers_one_accepted`: `UNIQUE (release_id) WHERE status = 'accepted'` | Освободившееся время получает не больше одного клиента из листа ожидания |
 | `waitlist_offers_one_pending_per_entry`: `UNIQUE (entry_id) WHERE status = 'pending'` | У заявки не больше одного действующего предложения |
 | CHECK статусов `waitlist_entries`, `waitlist_releases`, `waitlist_offers` и настроек листа ожидания | Только допустимые значения |

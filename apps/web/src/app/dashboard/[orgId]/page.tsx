@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useOrg } from '@/components/dashboard/OrgContext';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
-import { Badge, Card, PageHeader, Spinner, statusTone } from '@/components/ui';
+import { Alert, Badge, Card, PageHeader, Spinner, statusTone } from '@/components/ui';
 import type { ApptRow } from '@/components/dashboard/AppointmentDialogs';
 import { addDays, localISODate, money, timeOnly, zonedStartOfDay } from '@/lib/format';
 
@@ -20,6 +20,8 @@ export default function OverviewPage() {
   const { data, loading } = useApi<{ items: ApptRow[]; total: number }>(
     allowed ? `${base}/appointments?branchId=${branch.id}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&status=pending_otp,confirmed,completed&pageSize=200` : null,
   );
+  // Предупреждения графика смен (задача 21): завтра не заполнено, записи вне смен
+  const shifts = useApi<{ mode: string; tomorrow: null | { filled: boolean }; conflicts: Array<{ appointmentId: string }> }>(branch ? `${base}/branches/${branch.id}/shifts/status` : null);
   const items = data?.items ?? [];
   const byDay = (d: string) => items.filter((a) => localISODate(new Date(a.startAt), tz) === d);
   const revenue = (d: string) => byDay(d).filter((a) => a.status !== 'pending_otp').reduce((s, a) => s + a.totalPrice, 0);
@@ -41,6 +43,12 @@ export default function OverviewPage() {
     <div>
       <PageHeader title={org.name} subtitle={branch ? `${branch.name}${branch.address ? ` · ${branch.address}` : ''}` : undefined} />
       {!branch && <Card><p className="text-sm text-slate-600">{t('empty')} — <Link className="text-brand-700 underline" href={`/dashboard/${org.id}/branches`}>{t('branches')}</Link></p></Card>}
+      {shifts.data?.tomorrow && !shifts.data.tomorrow.filled && (
+        <div className="mb-4"><Alert tone="amber">{t('tomorrowNotFilled')} <Link className="font-medium underline" href={`/dashboard/${org.id}/schedule`}>{t('resourcesSchedule')} →</Link></Alert></div>
+      )}
+      {!!shifts.data?.conflicts.length && (
+        <div className="mb-4"><Alert tone="amber">{t('appointmentsOutsideShifts')} {shifts.data.conflicts.length}. <Link className="font-medium underline" href={`/dashboard/${org.id}/schedule`}>{t('resourcesSchedule')} →</Link></Alert></div>
+      )}
       {branch && (
         <div className="grid gap-4 lg:grid-cols-3">
           <Card title={t('today')}>

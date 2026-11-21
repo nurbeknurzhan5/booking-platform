@@ -11,6 +11,11 @@ import type { ActorContext, TenantContext } from '../common/request-context';
 type SpecialistInput = z.infer<typeof SpecialistInputSchema>;
 type ResourceInput = z.infer<typeof ResourceInputSchema>;
 
+const RESOURCE_INCLUDE = {
+  services: { select: { serviceId: true } },
+  photo: { select: { id: true, variants: true } },
+} as const;
+
 const SPECIALIST_INCLUDE = {
   services: { select: { serviceId: true, priceOverride: true } },
   photo: { select: { id: true, variants: true } },
@@ -142,6 +147,28 @@ export class ResourcesService {
     });
   }
 
+  /**
+   * Назначение специалистов филиала на услугу (из карточки услуги). Остальные специалисты филиала с неё снимаются;
+   * индивидуальные цены у оставшихся сохраняются. Уже созданные записи не меняются.
+   */
+  async setServiceSpecialists(t: TenantContext, branchId: string, serviceId: string, specialistIds: string[], actor: ActorContext) {
+    const organizationId = t.organizationId;
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertServicesInBranch(tx, organizationId, branchId, [serviceId]);
+      const inBranch = await tx.specialist.findMany({ where: { organizationId, branchId, archivedAt: null }, select: { id: true, services: { where: { serviceId }, select: { serviceId: true } } } });
+      const wanted = new Set(specialistIds);
+      if (wanted.size !== specialistIds.length) throw AppError.badRequest('VALIDATION_ERROR', 'Специалист указан дважды');
+      const known = new Set(inBranch.map((s) => s.id));
+      if ([...wanted].some((id) => !known.has(id))) throw AppError.badRequest('VALIDATION_ERROR', 'Специалист не найден в этом филиале');
+      const add = inBranch.filter((s) => wanted.has(s.id) && s.services.length === 0).map((s) => s.id);
+      const remove = inBranch.filter((s) => !wanted.has(s.id) && s.services.length > 0).map((s) => s.id);
+      if (add.length) await tx.specialistService.createMany({ data: add.map((specialistId) => ({ organizationId, specialistId, serviceId, priceOverride: null })) });
+      if (remove.length) await tx.specialistService.deleteMany({ where: { organizationId, serviceId, specialistId: { in: remove } } });
+      await this.audit.log(actor, 'service.specialists_updated', 'service', serviceId, { after: { branchId, specialistIds }, organizationId }, tx);
+      return { serviceId, branchId, specialistIds: [...wanted] };
+    });
+  }
+
   async archiveSpecialist(t: TenantContext, branchId: string, id: string, actor: ActorContext) {
     const sp = await this.getSpecialist(t, branchId, id);
     await this.assertNoFutureBookings(sp.resourceId);
@@ -154,18 +181,19 @@ export class ResourcesService {
   }
 
   // ---------- ресурсы (кабинеты, залы, оборудование, автомобили, посты) ----------
-  listResources(t: TenantContext, branchId: string) {
-    return this.prisma.resource.findMany({
+  async listResources(t: TenantContext, branchId: string) {
+    const rows = await this.prisma.resource.findMany({
       where: { organizationId: t.organizationId, branchId, archivedAt: null, type: { not: 'specialist' } },
-      include: { services: { select: { serviceId: true } } },
+      include: RESOURCE_INCLUDE,
       orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     });
+    return rows.map((r) => this.withPhotoUrl(r));
   }
 
   async getResource(t: TenantContext, branchId: string, id: string) {
     const r = await this.prisma.resource.findFirst({
       where: { id, organizationId: t.organizationId, branchId, archivedAt: null, type: { not: 'specialist' } },
-      include: { services: { select: { serviceId: true } } },
+      include: RESOURCE_INCLUDE,
     });
     if (!r) throw AppError.notFound('Ресурс');
     return r;
@@ -175,14 +203,25 @@ export class ResourcesService {
     const organizationId = t.organizationId;
     return this.prisma.$transaction(async (tx) => {
       await this.assertServicesInBranch(tx, organizationId, branchId, input.serviceIds);
+      await this.assertPhoto(tx, organizationId, input.photoAssetId);
       const r = await tx.resource.create({
-        data: { organizationId, branchId, type: input.type, name: input.name, description: input.description, isActive: input.isActive, sortOrder: input.sortOrder },
+        data: {
+          organizationId,
+          branchId,
+          type: input.type,
+          name: input.name,
+          description: input.description,
+          isPublic: input.isPublic,
+          photoAssetId: input.photoAssetId ?? null,
+          isActive: input.isActive,
+          sortOrder: input.sortOrder,
+        },
       });
       if (input.serviceIds.length) {
         await tx.resourceService.createMany({ data: input.serviceIds.map((serviceId) => ({ organizationId, resourceId: r.id, serviceId })) });
       }
       await this.audit.log(actor, 'resource.created', 'resource', r.id, { after: input }, tx);
-      return tx.resource.findUniqueOrThrow({ where: { id: r.id }, include: { services: { select: { serviceId: true } } } });
+      return tx.resource.findUniqueOrThrow({ where: { id: r.id }, include: RESOURCE_INCLUDE });
     });
   }
 
@@ -191,9 +230,17 @@ export class ResourcesService {
     const organizationId = t.organizationId;
     return this.prisma.$transaction(async (tx) => {
       if (input.serviceIds) await this.assertServicesInBranch(tx, organizationId, branchId, input.serviceIds);
+      await this.assertPhoto(tx, organizationId, input.photoAssetId);
       await tx.resource.update({
         where: { id },
-        data: { name: input.name, description: input.description, isActive: input.isActive, sortOrder: input.sortOrder },
+        data: {
+          name: input.name,
+          description: input.description,
+          isPublic: input.isPublic,
+          photoAssetId: input.photoAssetId,
+          isActive: input.isActive,
+          sortOrder: input.sortOrder,
+        },
       });
       if (input.serviceIds) {
         await tx.resourceService.deleteMany({ where: { resourceId: id } });
@@ -201,7 +248,7 @@ export class ResourcesService {
           await tx.resourceService.createMany({ data: input.serviceIds.map((serviceId) => ({ organizationId, resourceId: id, serviceId })) });
         }
       }
-      const after = await tx.resource.findUniqueOrThrow({ where: { id }, include: { services: { select: { serviceId: true } } } });
+      const after = await tx.resource.findUniqueOrThrow({ where: { id }, include: RESOURCE_INCLUDE });
       await this.audit.log(actor, 'resource.updated', 'resource', id, { before, after }, tx);
       return after;
     });

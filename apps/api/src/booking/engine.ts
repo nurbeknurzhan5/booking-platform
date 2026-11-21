@@ -200,6 +200,26 @@ export function dayWindows(src: ScheduleSource, date: string, timezone: string, 
   return subtract(normalize(base), breaks);
 }
 
+/** Смена специалиста на дату: рабочий интервал минус перерыв (режим графика «по сменам», задача 21). */
+export interface ShiftRule {
+  startMinute: number;
+  endMinute: number;
+  breakStart: number | null;
+  breakEnd: number | null;
+}
+
+export function shiftWindows(shift: ShiftRule, date: string, timezone: string): Interval[] {
+  const midnight = localMidnight(date, timezone);
+  const work = [{ start: minutesToInstant(midnight, shift.startMinute), end: minutesToInstant(midnight, shift.endMinute) }];
+  const brk = shift.breakStart !== null && shift.breakEnd !== null ? [{ start: minutesToInstant(midnight, shift.breakStart), end: minutesToInstant(midnight, shift.breakEnd) }] : [];
+  return subtract(work, brk);
+}
+
+/** Минуты от локальной полуночи для момента времени (обратное преобразование). */
+export function instantToMinutes(instant: number, date: string, timezone: string): number {
+  return Math.round((instant - localMidnight(date, timezone).toMillis()) / MIN);
+}
+
 // ---------- поиск назначения ----------
 
 interface ItemPlan {

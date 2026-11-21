@@ -1498,6 +1498,48 @@
         ]
       }
     },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/specialists/by-service/{serviceId}": {
+      "put": {
+        "operationId": "SpecialistsController_setForService",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceSpecialistsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Назначить специалистов филиала на услугу (остальные снимаются)",
+        "tags": [
+          "specialists"
+        ]
+      }
+    },
     "/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}": {
       "get": {
         "operationId": "SpecialistsController_get",
@@ -1877,6 +1919,206 @@
             "description": ""
           }
         },
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/shifts": {
+      "get": {
+        "operationId": "ShiftsController_list",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Смены специалистов за период (до 62 дней) и режим графика",
+        "tags": [
+          "schedules"
+        ]
+      },
+      "put": {
+        "operationId": "ShiftsController_upsert",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Назначить или изменить смену; при записях вне новой смены — 409 SHIFT_CONFLICT со списком, если не force",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/shifts/status": {
+      "get": {
+        "operationId": "ShiftsController_status",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Заполнен ли график на завтра и записи вне смен",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/shifts/remove": {
+      "post": {
+        "operationId": "ShiftsController_remove",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftDeleteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Снять специалиста со смены; при записях — 409 SHIFT_CONFLICT со списком, если не force",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/shifts/fill": {
+      "post": {
+        "operationId": "ShiftsController_fill",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftFillDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Заполнить смены по недельному графику на период",
+        "tags": [
+          "schedules"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/branches/{branchId}/shifts/copy": {
+      "post": {
+        "operationId": "ShiftsController_copy",
+        "parameters": [
+          {
+            "name": "branchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShiftCopyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Скопировать смены дня на другие даты",
         "tags": [
           "schedules"
         ]
@@ -4890,6 +5132,13 @@
               "offer_next",
               "release"
             ]
+          },
+          "scheduleMode": {
+            "type": "string",
+            "enum": [
+              "weekly",
+              "shifts"
+            ]
           }
         },
         "required": [
@@ -5762,6 +6011,23 @@
           "name"
         ]
       },
+      "ServiceSpecialistsDto": {
+        "type": "object",
+        "properties": {
+          "specialistIds": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        },
+        "required": [
+          "specialistIds"
+        ]
+      },
       "UpdateSpecialistDto": {
         "type": "object",
         "properties": {
@@ -5843,6 +6109,16 @@
             "type": "string",
             "maxLength": 5000
           },
+          "isPublic": {
+            "default": false,
+            "type": "boolean"
+          },
+          "photoAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "nullable": true
+          },
           "isActive": {
             "default": true,
             "type": "boolean"
@@ -5880,6 +6156,15 @@
           "description": {
             "type": "string",
             "maxLength": 5000
+          },
+          "isPublic": {
+            "type": "boolean"
+          },
+          "photoAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "nullable": true
           },
           "isActive": {
             "type": "boolean"
@@ -6032,6 +6317,130 @@
           "dateFrom",
           "dateTo",
           "kind"
+        ]
+      },
+      "ShiftDto": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "startMinute": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          },
+          "endMinute": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          },
+          "breakStart": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440,
+            "nullable": true
+          },
+          "breakEnd": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440,
+            "nullable": true
+          },
+          "force": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resourceId",
+          "date",
+          "startMinute",
+          "endMinute"
+        ]
+      },
+      "ShiftDeleteDto": {
+        "type": "object",
+        "properties": {
+          "resourceId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "force": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resourceId",
+          "date"
+        ]
+      },
+      "ShiftFillDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "resourceIds": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "overwrite": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "ShiftCopyDto": {
+        "type": "object",
+        "properties": {
+          "fromDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "toDates": {
+            "minItems": 1,
+            "maxItems": 62,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          "overwrite": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fromDate",
+          "toDates"
         ]
       },
       "SearchDto": {

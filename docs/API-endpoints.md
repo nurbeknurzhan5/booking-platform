@@ -211,6 +211,12 @@
 | `POST` | `/api/v1/organizations/{orgId}/branches/{branchId}/schedule/exceptions` | Добавить исключение: праздник, выходной, временное закрытие, особые часы | branchId | да | сотрудник организации (RBAC) |
 | `DELETE` | `/api/v1/organizations/{orgId}/branches/{branchId}/schedule/exceptions/{exceptionId}` |  | branchId, exceptionId |  | сотрудник организации (RBAC) |
 | `PUT` | `/api/v1/organizations/{orgId}/branches/{branchId}/schedule/weekly` | Заменить недельное расписание (рабочее время и перерывы) | branchId | да | сотрудник организации (RBAC) |
+| `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts` | Смены специалистов за период (до 62 дней) и режим графика | branchId, from, to |  | сотрудник организации (RBAC) |
+| `PUT` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts` | Назначить или изменить смену; при записях вне новой смены — 409 SHIFT_CONFLICT со списком, если не force | branchId | да | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts/copy` | Скопировать смены дня на другие даты | branchId | да | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts/fill` | Заполнить смены по недельному графику на период | branchId | да | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts/remove` | Снять специалиста со смены; при записях — 409 SHIFT_CONFLICT со списком, если не force | branchId | да | сотрудник организации (RBAC) |
+| `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/shifts/status` | Заполнен ли график на завтра и записи вне смен | branchId |  | сотрудник организации (RBAC) |
 
 ## services
 
@@ -232,6 +238,7 @@
 |---|---|---|---|---|---|
 | `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists` |  | branchId |  | сотрудник организации (RBAC) |
 | `POST` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists` | Создать специалиста в филиале | branchId | да | сотрудник организации (RBAC) |
+| `PUT` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/by-service/{serviceId}` | Назначить специалистов филиала на услугу (остальные снимаются) | branchId, serviceId | да | сотрудник организации (RBAC) |
 | `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId |  | сотрудник организации (RBAC) |
 | `PATCH` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId | да | сотрудник организации (RBAC) |
 | `DELETE` | `/api/v1/organizations/{orgId}/branches/{branchId}/specialists/{specialistId}` |  | branchId, specialistId |  | сотрудник организации (RBAC) |

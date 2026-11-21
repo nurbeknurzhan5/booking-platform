@@ -143,6 +143,7 @@ interface Rules {
   waitlistRecipients: number;
   waitlistPriority: 'fifo' | 'priority';
   waitlistAfterExpiry: 'offer_next' | 'release';
+  scheduleMode: 'weekly' | 'shifts';
 }
 
 function BookingRules({ branchId }: { branchId: string }) {
@@ -163,8 +164,8 @@ function BookingRules({ branchId }: { branchId: string }) {
           e.preventDefault();
           setMsg({});
           try {
-            const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry } = data;
-            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry } }));
+            const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry, scheduleMode } = data;
+            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry, scheduleMode } }));
             setMsg({ ok: t('saved') });
           } catch (err) {
             setMsg({ err: errorMessage(err) });
@@ -182,6 +183,12 @@ function BookingRules({ branchId }: { branchId: string }) {
           {num('cancelDeadlineMinutes', 'cancelDeadline')}
           {num('maxActiveAppointmentsPerClient', 'maxActive')}
           {num('reminderHoursBefore', 'reminderHours')}
+          <Field label={t('scheduleModeLabel')}>
+            <Select value={data.scheduleMode} onChange={(e) => setData({ ...data, scheduleMode: e.target.value as Rules['scheduleMode'] })} data-testid="schedule-mode">
+              <option value="weekly">{t('modeWeekly')}</option>
+              <option value="shifts">{t('modeShifts')}</option>
+            </Select>
+          </Field>
           <Field label={t('multiMode')}>
             <Select value={data.multiServiceMode} onChange={(e) => setData({ ...data, multiServiceMode: e.target.value as Rules['multiServiceMode'] })}>
               <option value="sequential">{t('sequential')}</option>
