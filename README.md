@@ -10,7 +10,7 @@ Multi-tenant платформа для салонов красоты, барбе
 - уведомления через официальный WhatsApp Business Platform, автоответ на входящие сообщения о записях, автоматическая реактивация клиентов (с согласием на рекламу и отпиской «СТОП»);
 - аналитика с UTM.
 
-Основание: [ТЗ.txt](ТЗ.txt) (версия 4.0). Ход работ: [docs/PROGRESS.md](docs/PROGRESS.md).
+Основание: [ТЗ.txt](ТЗ.txt) (версия 4.0). Задачи: [docs/TASKS.md](docs/TASKS.md). Ход работ: [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Стек (утверждён, [DECISIONS.md](docs/DECISIONS.md))
 
@@ -47,12 +47,13 @@ npm run dev:web      # http://localhost:3000
 - публичная страница: http://localhost:3000/ru/b/demo-salon;
 - владелец: `owner@demo.kz` / `DemoOwner12345`;
 - администратор филиала: `admin@demo.kz` / `DemoAdmin12345`;
-- в разработке коды OTP приходят в канал `dev_inbox`: `GET /api/v1/dev/inbox?phone=+7701…` (в production канал запрещён).
+- в разработке коды OTP приходят в канал `dev_inbox`: `GET /api/v1/dev/inbox?phone=+7701…` (в production канал запрещён);
+- вернуть dev-базу к чистым демо-данным: `npm run db:reset:dev -w @booking/api -- --yes`. Команда удаляет все данные, кроме учётных записей суперадминистраторов (пароль и MFA сохраняются). В production запрещена.
 
 ## Проверки
 
 ```bash
-npm test              # 137 unit + integration тестов (нужна БД booking_test)
+npm test              # 139 unit + integration тестов (нужна БД booking_test)
 npm run test:e2e      # 24 E2E (Playwright: ноутбук, монитор, планшет, телефон), при запущенных api/worker/web
 npm run lint
 npm run typecheck
@@ -70,7 +71,7 @@ node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | архитектура, изоляция, ядро бронирования, outbox |
 | [DECISIONS.md](docs/DECISIONS.md) | утверждённые и предложенные решения, что нужно от заказчика |
 | [ERD.md](docs/ERD.md) | модель данных, ограничения, индексы, правила удаления |
-| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 159 операций |
+| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 161 операция |
 | [SECURITY.md](docs/SECURITY.md) | меры безопасности и что проверить до запуска |
 | [ANALYTICS.md](docs/ANALYTICS.md) | правила подсчёта, атрибуция, боты, внутренние просмотры |
 | [TESTING.md](docs/TESTING.md) | тесты, конкурентные и нагрузочные результаты |

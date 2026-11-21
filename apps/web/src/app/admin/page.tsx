@@ -26,7 +26,7 @@ interface Integrations {
 }
 
 export default function AdminHome() {
-  const { t } = useT();
+  const { t, st } = useT();
   const stats = useApi<Stats>('/admin/stats');
   const integ = useApi<Integrations>('/admin/integrations');
   if (!stats.data) return <Spinner />;
@@ -40,26 +40,39 @@ export default function AdminHome() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {tile(t('organizations'), s.organizations)}
         {tile(t('branches'), s.branches)}
-        {tile(t('users'), s.users)}
-        {tile(`${t('appointments')} (30d)`, s.appointmentsLast30Days)}
-        {tile(`${t('payments')} (30d)`, money(s.paymentsLast30Days))}
+        {tile(t('usersTotal'), s.users)}
+        {tile(`${t('appointments')} · 30 ${t('daysShort')}`, s.appointmentsLast30Days)}
+        {tile(`${t('payments')} · 30 ${t('daysShort')}`, money(s.paymentsLast30Days))}
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={t('subscription')}>{Object.entries(s.subscriptions).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{k}</span><b>{v}</b></p>)}</Card>
-        <Card title={t('appointments')}>{Object.entries(s.appointmentsByStatus).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{k}</span><b>{v}</b></p>)}</Card>
-        <Card title={t('queues')}>{Object.entries(s.notificationQueue).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{k}</span><b className={k === 'dead' ? 'text-rose-600' : ''}>{v}</b></p>)}</Card>
+        <Card title={t('subscription')}>{Object.entries(s.subscriptions).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{st(k)}</span><b>{v}</b></p>)}</Card>
+        <Card title={t('appointments')}>{Object.entries(s.appointmentsByStatus).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{st(k)}</span><b>{v}</b></p>)}</Card>
+        <Card title={t('queues')}>{Object.entries(s.notificationQueue).map(([k, v]) => <p key={k} className="flex justify-between text-sm"><span>{st(k)}</span><b className={k === 'dead' ? 'text-rose-600' : ''}>{v}</b></p>)}</Card>
       </div>
       {integ.data && (
         <Card title={t('integrations')}>
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Badge tone={integ.data.whatsapp.configured ? 'green' : 'red'}>WhatsApp Cloud API {integ.data.whatsapp.apiVersion}</Badge>
-            <Badge tone={integ.data.whatsapp.webhookSecretConfigured ? 'green' : 'amber'}>Webhook signature</Badge>
-            <Badge tone={integ.data.sms.configured ? 'green' : 'slate'}>SMS ({integ.data.sms.provider})</Badge>
-            <Badge tone={integ.data.translation.configured ? 'green' : 'slate'}>Google Translate</Badge>
-            <Badge tone={integ.data.storage.driver === 's3' ? 'green' : 'amber'}>Storage: {integ.data.storage.driver}</Badge>
-            <Badge>{integ.data.environment}</Badge>
-            <Badge>channels: {integ.data.notificationChannels.join(', ') || '—'}</Badge>
-          </div>
+          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+            {([
+              [`WhatsApp Cloud API ${integ.data.whatsapp.apiVersion}`, integ.data.whatsapp.configured, true],
+              [t('adminWebhookSignature'), integ.data.whatsapp.webhookSecretConfigured, true],
+              [`SMS (${integ.data.sms.provider})`, integ.data.sms.configured, false],
+              ['Google Translate', integ.data.translation.configured, false],
+              [t('adminObjectStorage'), integ.data.storage.driver === 's3' && integ.data.storage.s3Configured, true],
+            ] as const).map(([label, ok, important]) => (
+              <div key={label} className="flex items-center justify-between gap-3 border-b border-slate-100 py-1.5">
+                <dt>{label}</dt>
+                <dd><Badge tone={ok ? 'green' : important ? 'amber' : 'slate'}>{ok ? t('integrationConnected') : t('integrationNotConnected')}</Badge></dd>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1.5">
+              <dt>{t('adminEnvironment')}</dt>
+              <dd><Badge>{integ.data.environment}</Badge></dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-1.5">
+              <dt>{t('adminChannels')}</dt>
+              <dd className="text-right">{integ.data.notificationChannels.map(st).join(', ') || '—'}</dd>
+            </div>
+          </dl>
         </Card>
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
@@ -24,7 +24,7 @@ interface History {
 
 export default function AdminOrgDetail() {
   const { id } = useParams<{ id: string }>();
-  const { t } = useT();
+  const { t, st } = useT();
   const org = useApi<OrgDetail>(`/admin/organizations/${id}`);
   const hist = useApi<History>(`/admin/organizations/${id}/subscription/history`);
   const plans = useApi<Array<{ id: string; name: string; maxBranches: number; monthlyPrice: number }>>('/admin/plans');
@@ -33,6 +33,18 @@ export default function AdminOrgDetail() {
   const [pay, setPay] = useState({ amount: '', method: 'kaspi', reference: '', extendTo: '' });
   const [owner, setOwner] = useState({ email: '', name: '', temporaryPassword: '' });
   const [branch, setBranch] = useState({ name: '', address: '' });
+
+  // Поля дат и льготного периода заполняются текущей подпиской: правка начинается с действующих значений.
+  const current = org.data?.subscription.subscription;
+  useEffect(() => {
+    if (!current) return;
+    setSub((x) => ({
+      ...x,
+      startsAt: x.startsAt || current.startsAt.slice(0, 10),
+      endsAt: x.endsAt || current.endsAt.slice(0, 10),
+      graceDays: String(current.graceDays),
+    }));
+  }, [current]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setMsg({});
@@ -62,10 +74,10 @@ export default function AdminOrgDetail() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={t('subscription')}>
-          <p className="mb-3"><Badge tone={statusTone(o.subscription.status)}>{o.subscription.status}</Badge></p>
+          <p className="mb-3"><Badge tone={statusTone(o.subscription.status)}>{st(o.subscription.status)}</Badge></p>
           {s && (
             <p className="mb-3 text-sm text-slate-600">
-              {s.plan.name} · {s.branchesUsed}/{s.maxBranches} · {money(s.price)} · {new Date(s.startsAt).toLocaleDateString('ru-RU')} — {new Date(s.endsAt).toLocaleDateString('ru-RU')} (+{s.graceDays})
+              {s.plan.name} · {s.branchesUsed}/{s.maxBranches} · {money(s.price)} · {new Date(s.startsAt).toLocaleDateString('ru-RU')} — {new Date(s.endsAt).toLocaleDateString('ru-RU')} · {t('graceDays')}: {s.graceDays}
               {s.suspendedReason && <span className="block text-rose-700">{s.suspendedReason}</span>}
             </p>
           )}
@@ -80,7 +92,7 @@ export default function AdminOrgDetail() {
             <Field label={t('price')}><Input type="number" min={0} value={sub.price} onChange={(e) => setSub({ ...sub, price: e.target.value })} placeholder={String(s?.price ?? '')} /></Field>
             <Field label={t('validFrom')}><Input type="date" value={sub.startsAt} onChange={(e) => setSub({ ...sub, startsAt: e.target.value })} /></Field>
             <Field label={t('validTo')}><Input type="date" value={sub.endsAt} onChange={(e) => setSub({ ...sub, endsAt: e.target.value })} /></Field>
-            <Field label={t('graceUntil')}><Input type="number" min={0} value={sub.graceDays} onChange={(e) => setSub({ ...sub, graceDays: e.target.value })} /></Field>
+            <Field label={t('graceDays')}><Input type="number" min={0} value={sub.graceDays} onChange={(e) => setSub({ ...sub, graceDays: e.target.value })} /></Field>
             <div className="sm:col-span-3"><Button type="submit" variant="secondary">{t('save')}</Button></div>
           </form>
         </Card>
@@ -90,17 +102,17 @@ export default function AdminOrgDetail() {
             <Field label={t('amount')}><Input type="number" min={0} required value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></Field>
             <Field label={t('method')}>
               <Select value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
-                {['kaspi', 'bank_transfer', 'cash', 'card', 'other'].map((m) => <option key={m}>{m}</option>)}
+                {['kaspi', 'bank_transfer', 'cash', 'card', 'other'].map((m) => <option key={m} value={m}>{t(`pay_${m}` as 'pay_kaspi')}</option>)}
               </Select>
             </Field>
-            <Field label="Ref"><Input value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} /></Field>
+            <Field label={t('paymentRef')}><Input value={pay.reference} onChange={(e) => setPay({ ...pay, reference: e.target.value })} /></Field>
             <Field label={t('extendTo')}><Input type="date" value={pay.extendTo} onChange={(e) => setPay({ ...pay, extendTo: e.target.value })} /></Field>
             <div className="sm:col-span-2"><Button type="submit">{t('recordPayment')}</Button></div>
           </form>
         </Card>
 
         <Card title={t('owners')}>
-          <ul className="mb-3 text-sm">{o.members.map((m) => <li key={m.user.id}>{m.user.name} · {m.user.email} · <Badge>{m.roleCode}</Badge></li>)}</ul>
+          <ul className="mb-3 text-sm">{o.members.map((m) => <li key={m.user.id}>{m.user.name} · {m.user.email} · <Badge>{t(`role_${m.roleCode}` as 'role_OWNER')}</Badge></li>)}</ul>
           <form className="grid gap-2 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); void act(() => api(`/admin/organizations/${id}/owners`, { method: 'POST', body: owner })); }}>
             <Input type="email" placeholder={t('email')} required value={owner.email} onChange={(e) => setOwner({ ...owner, email: e.target.value })} />
             <Input placeholder={t('personName')} required value={owner.name} onChange={(e) => setOwner({ ...owner, name: e.target.value })} />
@@ -110,7 +122,7 @@ export default function AdminOrgDetail() {
         </Card>
 
         <Card title={t('branches')}>
-          <ul className="mb-3 text-sm">{o.branches.map((b) => <li key={b.id} className="flex justify-between"><a className="text-brand-700 underline" href={`/ru/b/${b.slug}`} target="_blank" rel="noreferrer">{b.name}</a>{b.page && <Badge tone={b.page.moderationBlocked ? 'red' : statusTone(b.page.status)}>{b.page.moderationBlocked ? 'blocked' : b.page.status}</Badge>}</li>)}</ul>
+          <ul className="mb-3 text-sm">{o.branches.map((b) => <li key={b.id} className="flex justify-between"><a className="text-brand-700 underline" href={`/ru/b/${b.slug}`} target="_blank" rel="noreferrer">{b.name}</a>{b.page && <Badge tone={b.page.moderationBlocked ? 'red' : statusTone(b.page.status)}>{st(b.page.moderationBlocked ? 'blocked' : b.page.status)}</Badge>}</li>)}</ul>
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void act(() => api(`/admin/organizations/${id}/branches`, { method: 'POST', body: { name: branch.name, address: branch.address || undefined } })); }}>
             <Input placeholder={t('name')} required value={branch.name} onChange={(e) => setBranch({ ...branch, name: e.target.value })} />
             <Input placeholder={t('address')} value={branch.address} onChange={(e) => setBranch({ ...branch, address: e.target.value })} />
@@ -122,12 +134,12 @@ export default function AdminOrgDetail() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title={t('history')}>
           <Table head={[t('date'), t('actions'), t('status'), '']} empty={!hist.data?.history.length}>
-            {(hist.data?.history ?? []).map((h) => <tr key={h.id}><Td className="whitespace-nowrap">{new Date(h.createdAt).toLocaleString('ru-RU')}</Td><Td>{h.action}</Td><Td>{h.fromStatus} → {h.toStatus}</Td><Td className="text-xs">{h.note}</Td></tr>)}
+            {(hist.data?.history ?? []).map((h) => <tr key={h.id}><Td className="whitespace-nowrap">{new Date(h.createdAt).toLocaleString('ru-RU')}</Td><Td>{st(h.action)}</Td><Td>{h.fromStatus ? st(h.fromStatus) : '—'} → {h.toStatus ? st(h.toStatus) : '—'}</Td><Td className="text-xs">{h.note}</Td></tr>)}
           </Table>
         </Card>
         <Card title={t('payments')}>
-          <Table head={[t('date'), t('amount'), t('method'), 'Ref']} empty={!hist.data?.payments.length}>
-            {(hist.data?.payments ?? []).map((p) => <tr key={p.id}><Td>{new Date(p.paidAt).toLocaleDateString('ru-RU')}</Td><Td>{money(p.amount)}</Td><Td>{p.method}</Td><Td>{p.reference}</Td></tr>)}
+          <Table head={[t('date'), t('amount'), t('method'), t('paymentRef')]} empty={!hist.data?.payments.length}>
+            {(hist.data?.payments ?? []).map((p) => <tr key={p.id}><Td>{new Date(p.paidAt).toLocaleDateString('ru-RU')}</Td><Td>{money(p.amount)}</Td><Td>{t(`pay_${p.method}` as 'pay_kaspi')}</Td><Td>{p.reference}</Td></tr>)}
           </Table>
         </Card>
       </div>

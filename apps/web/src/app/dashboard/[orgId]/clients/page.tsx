@@ -5,7 +5,7 @@ import { useOrg } from '@/components/dashboard/OrgContext';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
-import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Spinner, Table, Td, Textarea, statusTone } from '@/components/ui';
+import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Pager, Spinner, Table, Td, Textarea, statusTone } from '@/components/ui';
 import { formatPhone, money } from '@/lib/format';
 
 interface ClientRow {
@@ -38,14 +38,16 @@ export default function ClientsPage() {
   const { t } = useT();
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
-  const list = useApi<{ total: number; items: ClientRow[] }>(`${base}/clients?pageSize=100${q ? `&search=${encodeURIComponent(q)}` : ''}`);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+  const list = useApi<{ total: number; items: ClientRow[] }>(`${base}/clients?page=${page}&pageSize=${PAGE_SIZE}${q ? `&search=${encodeURIComponent(q)}` : ''}`);
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
     <div>
       <PageHeader title={t('clients')} subtitle={list.data ? `${list.data.total}` : undefined} />
       <Card>
-        <form className="mb-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); setQ(search); }}>
+        <form className="mb-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); setQ(search); setPage(1); }}>
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`${t('search')}: ${t('personName')} / ${t('phone')}`} className="max-w-sm" />
           <Button type="submit" variant="secondary">{t('search')}</Button>
         </form>
@@ -63,6 +65,7 @@ export default function ClientsPage() {
             ))}
           </Table>
         )}
+        {list.data && <Pager page={page} pageSize={PAGE_SIZE} total={list.data.total} onChange={setPage} label={`${t('clients')}: ${list.data.total}`} />}
       </Card>
       {openId && <ClientDialog id={openId} onClose={() => { setOpenId(null); void list.reload(); }} canEdit={can('appointments.manage')} isOwner={isOwner} candidates={list.data?.items ?? []} />}
     </div>
@@ -71,7 +74,7 @@ export default function ClientsPage() {
 
 function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: string; onClose: () => void; canEdit: boolean; isOwner: boolean; candidates: ClientRow[] }) {
   const { base } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const card = useApi<ClientCard>(`${base}/clients/${id}`);
   const [notes, setNotes] = useState<string | null>(null);
   const [mergeId, setMergeId] = useState('');
@@ -87,7 +90,7 @@ function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: strin
             <Badge tone="amber">{t('cancellations')}: {c.stats.cancellations}</Badge>
             <Badge tone="red">{t('noShows')}: {c.stats.noShows}</Badge>
             <Badge>{new Date(c.createdAt).toLocaleDateString('ru-RU')}</Badge>
-            {Object.entries(c.consents).map(([k, v]) => <Badge key={k} tone={v.granted ? 'green' : 'slate'}>{k}: {v.granted ? '✓' : '✕'}</Badge>)}
+            {Object.entries(c.consents).map(([k, v]) => <Badge key={k} tone={v.granted ? 'green' : 'slate'}>{t(`consent_${k}` as 'consent_marketing')}: {v.granted ? '✓' : '✕'}</Badge>)}
           </div>
           {canEdit && (
             <Field label={t('notes')}>
@@ -104,7 +107,7 @@ function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: strin
                 <Td>{a.branch.name}</Td>
                 <Td>{a.items.map((i) => i.serviceNameSnapshot).join(', ')}</Td>
                 <Td>{money(a.totalPrice)}</Td>
-                <Td><Badge tone={statusTone(a.status)}>{a.status}</Badge></Td>
+                <Td><Badge tone={statusTone(a.status)}>{st(a.status)}</Badge></Td>
               </tr>
             ))}
           </Table>

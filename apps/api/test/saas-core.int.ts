@@ -119,6 +119,40 @@ describe('Этап 2: SaaS-основа — авторизация, органи
       });
       expect(r.status).toBe(403);
     });
+
+    it('владелец восстанавливает доступ своему администратору филиала (D-35), но не владельцу и не чужим', async () => {
+      const a = await createOrgWithOwner(ctx, admin, { name: 'A' });
+      const b = await createOrgWithOwner(ctx, admin, { name: 'B' });
+      const branch = (await a.owner.post(`${API}/organizations/${a.orgId}/branches`, { name: 'A1' })).body;
+      const created = await a.owner.post(`${API}/organizations/${a.orgId}/users`, {
+        email: 'adm-reset@test.kz',
+        name: 'Админ',
+        temporaryPassword: 'Password123!',
+        role: 'BRANCH_ADMIN',
+        branchAccess: [{ branchId: branch.id, permissions: ['appointments.view'] }],
+      });
+      expect(created.status).toBe(201);
+      const adminHttp = await loginStaff(ctx, 'adm-reset@test.kz', 'Password123!');
+      const url = (org: string, user: string) => `${API}/organizations/${org}/users/${user}/reset-password`;
+
+      expect((await a.owner.post(url(a.orgId, created.body.id), { temporaryPassword: 'short' })).status).toBe(400);
+      expect((await a.owner.post(url(a.orgId, created.body.id), { temporaryPassword: 'NewTemp12345' })).status).toBe(204);
+      expect((await adminHttp.get(`${API}/auth/me`)).status).toBe(401); // сессии отозваны
+      const relog = await new Http(ctx.app).post(`${API}/auth/staff/login`, { email: 'adm-reset@test.kz', password: 'NewTemp12345' });
+      expect(relog.body.user.mustChangePassword).toBe(true);
+      expect(await ctx.prisma.auditLog.count({ where: { action: 'staff.password_reset', entityId: created.body.id } })).toBe(1);
+
+      // владельца, себя и сотрудника чужой организации — нельзя
+      const ownerA = await ctx.prisma.userOrganizationRole.findFirstOrThrow({ where: { organizationId: a.orgId, roleCode: 'OWNER' } });
+      expect((await a.owner.post(url(a.orgId, ownerA.userId), { temporaryPassword: 'NewTemp12345' })).status).toBe(400); // это он сам
+      const ownerB = await ctx.prisma.userOrganizationRole.findFirstOrThrow({ where: { organizationId: b.orgId, roleCode: 'OWNER' } });
+      expect((await a.owner.post(url(a.orgId, ownerB.userId), { temporaryPassword: 'NewTemp12345' })).status).toBe(404);
+      expect((await b.owner.post(url(b.orgId, created.body.id), { temporaryPassword: 'NewTemp12345' })).status).toBe(404);
+
+      // сотрудник, работающий и в другой организации, — только через администратора платформы
+      await ctx.prisma.userOrganizationRole.create({ data: { userId: created.body.id, organizationId: b.orgId, roleCode: 'BRANCH_ADMIN' } });
+      expect((await a.owner.post(url(a.orgId, created.body.id), { temporaryPassword: 'NewTemp12345' })).status).toBe(403);
+    });
   });
 
   describe('изоляция организаций (§26.5)', () => {

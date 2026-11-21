@@ -101,6 +101,14 @@ describe('Этап 4: онлайн-запись', () => {
       expect(view.body.price.total).toBe(5000);
       expect(view.body.items[0].serviceName).toBe('Стрижка');
 
+      // регрессия: частичный PATCH не сбрасывает остальные поля (филиалы, активность, буферы)
+      const svc = await ctx.prisma.service.findUniqueOrThrow({ where: { id: b.services.haircut }, include: { branchServices: true } });
+      expect(svc).toMatchObject({ price: 9999, isActive: true, onlineBookingEnabled: true });
+      expect(svc.branchServices.map((x) => x.branchId)).toEqual([b.branchId]);
+      const slotsAfter = await new Http(ctx.app).post(`${API}/public/branches/${b.slug}/availability`, { date, items: [{ serviceId: b.services.haircut }] });
+      expect(slotsAfter.status).toBe(200);
+      expect(slotsAfter.body.slots.length).toBeGreaterThan(0);
+
       const history = await ctx.prisma.appointmentStatusHistory.findMany({ where: { appointmentId: hold.body.appointmentId }, orderBy: { createdAt: 'asc' } });
       expect(history.map((h) => h.toStatus)).toEqual(['pending_otp', 'confirmed']);
     });

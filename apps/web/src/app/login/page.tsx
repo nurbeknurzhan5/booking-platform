@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api, errorMessage } from '@/lib/api';
@@ -91,6 +92,12 @@ function LoginForm() {
         <Button type="submit" loading={busy} className="w-full" data-testid="login-submit">
           {mustChange ? t('save') : t('signIn')}
         </Button>
+        {!mustChange && <p className="text-xs text-slate-500">{t('forgotPasswordHint')}</p>}
+        {mustChange && <p className="text-xs text-slate-500">{t('newPasswordHint')}</p>}
+        <p className="flex justify-between text-xs">
+          <Link href="/" className="text-slate-500 underline">← {t('homePage')}</Link>
+          <Link href="/ru/cabinet" className="text-brand-700 underline">{t('clientCabinetLink')}</Link>
+        </p>
       </form>
     </main>
   );

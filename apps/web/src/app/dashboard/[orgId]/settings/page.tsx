@@ -65,13 +65,13 @@ function Profile() {
 }
 
 function Subscription({ base }: { base: string }) {
-  const { t } = useT();
+  const { t, st } = useT();
   const { data } = useApi<Sub>(`${base}/subscription`);
   if (!data) return <Spinner />;
   const s = data.subscription;
   return (
     <Card>
-      <p className="mb-3"><Badge tone={statusTone(data.status)}>{data.status}</Badge></p>
+      <p className="mb-3"><Badge tone={statusTone(data.status)}>{st(data.status)}</Badge></p>
       {s && (
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           <div><dt className="text-slate-500">{t('plan')}</dt><dd>{s.plan.name}</dd></div>
@@ -88,7 +88,7 @@ function Subscription({ base }: { base: string }) {
 }
 
 function Notifications({ base }: { base: string }) {
-  const { t } = useT();
+  const { t, st } = useT();
   const { data, setData } = useApi<{
     whatsappEnabled: boolean;
     smsEnabled: boolean;
@@ -149,14 +149,14 @@ function Notifications({ base }: { base: string }) {
         </div>
       </Card>
       <Card title={t('notifications')}>
-        <Table head={[t('date'), t('type'), 'channel', t('phone'), t('status')]} empty={!log.data?.length}>
+        <Table head={[t('date'), t('type'), t('channel'), t('phone'), t('status')]} empty={!log.data?.length}>
           {(log.data ?? []).map((n) => (
             <tr key={n.id}>
               <Td className="whitespace-nowrap">{new Date(n.createdAt).toLocaleString('ru-RU')}</Td>
-              <Td>{n.type}</Td>
-              <Td>{n.channel}</Td>
+              <Td>{st(n.type)}</Td>
+              <Td>{st(n.channel)}</Td>
               <Td>{n.recipient}</Td>
-              <Td><Badge tone={statusTone(n.status)}>{n.status}</Badge>{n.lastError && <div className="max-w-xs truncate text-xs text-rose-600" title={n.lastError}>{n.lastError}</div>}</Td>
+              <Td><Badge tone={statusTone(n.status)}>{st(n.status)}</Badge>{n.lastError && <div className="max-w-xs truncate text-xs text-rose-600" title={n.lastError}>{n.lastError}</div>}</Td>
             </tr>
           ))}
         </Table>

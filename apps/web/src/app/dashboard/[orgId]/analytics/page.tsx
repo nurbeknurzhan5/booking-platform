@@ -16,6 +16,15 @@ interface Report {
   appointmentsByStatus: Record<string, number>;
 }
 
+const CHART_PX = 160;
+
+/** Подпись периода: день — «19.11», неделя — «с 17.11», месяц — «11.2026». */
+function bucketLabel(bucket: string, gran: 'day' | 'week' | 'month'): string {
+  const [y, m, d] = bucket.slice(0, 10).split('-');
+  if (gran === 'month') return `${m}.${y}`;
+  return gran === 'week' ? `с ${d}.${m}` : `${d}.${m}`;
+}
+
 /** Аналитика публичной страницы и записей (§17). Внутренние просмотры и боты исключены. */
 export default function AnalyticsPage() {
   const { base, branch } = useOrg();
@@ -43,8 +52,8 @@ export default function AnalyticsPage() {
       <PageHeader title={t('analytics')} subtitle={branch?.name} />
       <Card className="mb-4">
         <div className="flex flex-wrap gap-3">
-          <Field label={t('validFrom')}><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-          <Field label={t('validTo')}><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+          <Field label={t('periodFrom')}><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label={t('periodTo')}><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <Field label={t('period')}>
             <Select value={gran} onChange={(e) => setGran(e.target.value as 'day')}>
               <option value="day">{t('byDay')}</option>
@@ -61,31 +70,47 @@ export default function AnalyticsPage() {
               <Card key={k}><p className="text-xs text-slate-500">{t(k)}</p><p className="text-2xl font-semibold">{v}</p></Card>
             ))}
           </div>
-          <Card title={`${t('pageViews')} / ${t('bookingsCreated')}`}>
-            <div className="flex h-48 items-end gap-1 overflow-x-auto">
-              {data.series.map((s) => (
-                <div key={s.bucket} className="flex min-w-[18px] flex-1 flex-col items-center justify-end gap-0.5" title={`${s.bucket}: ${s.pageViews} / ${s.bookingsCreated}`}>
-                  <div className="w-full rounded-t bg-brand-500/70" style={{ height: `${(s.pageViews / max) * 100}%` }} />
-                  <div className="w-full rounded-t bg-emerald-500" style={{ height: `${(s.bookingsCreated / max) * 100}%` }} />
-                  <span className="mt-1 rotate-[-60deg] whitespace-nowrap text-[9px] text-slate-400">{s.bucket.slice(5)}</span>
+          <Card
+            title={`${t('pageViews')} / ${t('bookingsCreated')}`}
+            actions={
+              <div className="flex gap-3 text-xs text-slate-600">
+                <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-500/70" />{t('pageViews')}</span>
+                <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" />{t('bookingsCreated')}</span>
+              </div>
+            }
+          >
+            {!data.series.length ? <p className="text-sm text-slate-500">{t('empty')}</p> : (
+              <div className="overflow-x-auto">
+                <div className="flex items-end gap-1" style={{ height: CHART_PX + 22, minWidth: data.series.length * 22 }} data-testid="analytics-chart">
+                  {data.series.map((s, i) => (
+                    <div key={s.bucket} className="flex min-w-[18px] flex-1 flex-col items-center" title={`${bucketLabel(s.bucket, gran)}: ${s.pageViews} / ${s.bookingsCreated}`}>
+                      <div className="flex w-full items-end justify-center gap-px" style={{ height: CHART_PX }}>
+                        <div className="w-1/2 rounded-t bg-brand-500/70" style={{ height: Math.round((s.pageViews / max) * CHART_PX) }} />
+                        <div className="w-1/2 rounded-t bg-emerald-500" style={{ height: Math.round((s.bookingsCreated / max) * CHART_PX) }} />
+                      </div>
+                      {/* подписи через одну-две при большом числе столбцов, чтобы не наезжали */}
+                      <span className="mt-1 h-4 whitespace-nowrap text-[10px] text-slate-400">
+                        {i % Math.max(1, Math.ceil(data.series.length / 12)) === 0 ? bucketLabel(s.bucket, gran) : ''}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {!data.series.length && <p className="text-sm text-slate-500">{t('empty')}</p>}
-            </div>
+              </div>
+            )}
           </Card>
           <div className="grid gap-4 lg:grid-cols-3">
             <Card title={t('sources')}>
               <Table head={['', t('pageViews'), t('uniqueVisitors'), t('bookingsCreated')]} empty={!data.sources.length}>
-                {data.sources.map((s) => <tr key={s.source}><Td>{s.source}</Td><Td>{s.views}</Td><Td>{s.uniques}</Td><Td>{s.bookings}</Td></tr>)}
+                {data.sources.map((s) => <tr key={s.source}><Td>{s.source === 'direct' ? t('sourceDirect') : s.source}</Td><Td>{s.views}</Td><Td>{s.uniques}</Td><Td>{s.bookings}</Td></tr>)}
               </Table>
             </Card>
             <Card title={t('popularServices')}>
-              <Table head={['', '#', '₸']} empty={!data.popularServices.length}>
+              <Table head={['', t('bookingsCount'), t('revenue')]} empty={!data.popularServices.length}>
                 {data.popularServices.map((s) => <tr key={s.name}><Td>{s.name}</Td><Td>{s.count}</Td><Td>{money(s.revenue)}</Td></tr>)}
               </Table>
             </Card>
             <Card title={t('popularSpecialists')}>
-              <Table head={['', '#']} empty={!data.popularSpecialists.length}>
+              <Table head={['', t('bookingsCount')]} empty={!data.popularSpecialists.length}>
                 {data.popularSpecialists.map((s) => <tr key={s.name ?? '-'}><Td>{s.name}</Td><Td>{s.count}</Td></tr>)}
               </Table>
             </Card>

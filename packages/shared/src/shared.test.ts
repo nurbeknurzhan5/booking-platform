@@ -18,6 +18,12 @@ import {
   CreateHoldSchema,
   PromotionInputSchema,
   WeeklyScheduleSchema,
+  UpdateBranchSchema,
+  UpdatePlanSchema,
+  UpdateResourceSchema,
+  UpdateServiceSchema,
+  UpdateSpecialistSchema,
+  ServiceInputSchema,
 } from './index';
 
 const d = (s: string) => new Date(s);
@@ -217,6 +223,19 @@ describe('text helpers', () => {
     expect(detectSocialPlatform('https://example.kz')).toBeNull();
     expect(detectSocialPlatform('javascript:alert(1)')).toBeNull();
     expect(isSafeHttpUrl('javascript:alert(1)')).toBe(false);
+  });
+});
+
+describe('update schemas (PATCH)', () => {
+  it('отсутствующие поля не получают значений по умолчанию — частичное обновление ничего не сбрасывает', () => {
+    for (const s of [UpdateBranchSchema, UpdateServiceSchema, UpdateResourceSchema, UpdateSpecialistSchema, UpdatePlanSchema]) {
+      expect(s.parse({})).toEqual({});
+    }
+    expect(UpdateServiceSchema.parse({ price: 9000 })).toEqual({ price: 9000 });
+    expect(UpdatePlanSchema.parse({ name: 'Старт' })).toEqual({ name: 'Старт' });
+    // при создании значения по умолчанию по-прежнему применяются
+    const created = ServiceInputSchema.parse({ name: 'Стрижка', price: 5000, durationMinutes: 60 });
+    expect(created).toMatchObject({ isActive: true, bufferBeforeMinutes: 0, branches: [] });
   });
 });
 

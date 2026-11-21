@@ -37,16 +37,36 @@ export function Button({
   );
 }
 
+/** Поля по умолчанию на всю ширину; переданная ширина (w-auto, w-40, max-w-…) заменяет w-full, а не конкурирует с ним. */
+const field = (className?: string) =>
+  cx('focus-ring rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm', /(^|\s)w-/.test(className ?? '') ? null : 'w-full', className);
+
 export function Input(p: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...p} className={cx('focus-ring w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm', p.className)} />;
+  return <input {...p} className={field(p.className)} />;
 }
 
 export function Textarea(p: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...p} className={cx('focus-ring w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm', p.className)} />;
+  return <textarea {...p} className={field(p.className)} />;
 }
 
 export function Select(p: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...p} className={cx('focus-ring w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm', p.className)} />;
+  return <select {...p} className={field(p.className)} />;
+}
+
+/** Постраничная навигация: «← 2 / 16 →». Не выводится, если страница одна. */
+export function Pager({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (p: number) => void; label?: ReactNode }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (pages <= 1) return null;
+  return (
+    <div className="mt-4 flex items-center justify-between gap-3 text-sm" data-testid="pager">
+      <span className="text-slate-500">{label}</span>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="←">←</Button>
+        <span className="tabular-nums">{page} / {pages}</span>
+        <Button variant="secondary" size="sm" disabled={page >= pages} onClick={() => onChange(page + 1)} aria-label="→">→</Button>
+      </div>
+    </div>
+  );
 }
 
 export function Checkbox({ label, ...p }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {

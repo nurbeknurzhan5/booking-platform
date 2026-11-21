@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import type { PublicPageData } from '@/lib/types';
 import { pt } from '@/lib/i18n-public';
-import { money, minutesLabel, weekdayName, formatPhone } from '@/lib/format';
+import { money, minutesLabel, weekdayName, formatPhone, shortDate } from '@/lib/format';
 import { captureUtm, track } from '@/lib/analytics';
 import { MapBlock } from './MapBlock';
 
@@ -169,7 +169,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
                 <div className="font-medium">{p.name}</div>
                 {p.description && <p className="tpl-muted text-sm">{p.description}</p>}
                 {p.code && <p className="mt-1 text-sm">{t('promoCode')}: <code className="font-mono font-semibold">{p.code}</code></p>}
-                {p.endsAt && <p className="tpl-muted text-xs">{t('until')} {new Date(p.endsAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'ru-RU')}</p>}
+                {p.endsAt && <p className="tpl-muted text-xs">{t('until')} {shortDate(p.endsAt, lang)}</p>}
               </li>
             ))}
           </ul>
@@ -185,7 +185,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
               <li key={r.id} className={`tpl-surface p-4 ${lay.card} ${lay.radius}`}>
                 <div className="tpl-accent">{'★'.repeat(r.rating)}<span className="opacity-30">{'★'.repeat(5 - r.rating)}</span></div>
                 {r.text && <p className="mt-1 text-sm">{r.text}</p>}
-                <p className="tpl-muted mt-2 text-xs">{r.authorName} · {new Date(r.createdAt).toLocaleDateString('ru-RU')}</p>
+                <p className="tpl-muted mt-2 text-xs">{r.authorName} · {shortDate(r.createdAt, lang)}</p>
                 {r.reply && <p className="tpl-muted mt-2 border-l-2 tpl-border pl-2 text-sm">{r.reply}</p>}
               </li>
             ))}

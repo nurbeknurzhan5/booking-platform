@@ -25,7 +25,7 @@ interface ReviewRow {
 
 /** Модерация публичного контента и отзывов с фиксацией причины (§13.8, §14). */
 export default function Moderation() {
-  const { t } = useT();
+  const { t, st } = useT();
   const [tab, setTab] = useState<'pages' | 'reviews'>('pages');
   const pages = useApi<PageRow[]>('/admin/pages');
   const reviews = useApi<ReviewRow[]>('/admin/reviews');
@@ -51,7 +51,7 @@ export default function Moderation() {
               <tr key={p.id}>
                 <Td>{p.branch.organization.name}</Td>
                 <Td><a className="text-brand-700 underline" href={`/ru/b/${p.branch.slug}`} target="_blank" rel="noreferrer">{p.branch.name}</a></Td>
-                <Td><Badge tone={statusTone(p.status)}>{p.status}</Badge></Td>
+                <Td><Badge tone={statusTone(p.status)}>{st(p.status)}</Badge></Td>
                 <Td>{p.moderationBlocked ? <Badge tone="red">{p.moderationReason}</Badge> : '—'}</Td>
                 <Td>
                   <Button size="sm" variant={p.moderationBlocked ? 'secondary' : 'danger'} onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(`/admin/pages/${p.id}/moderation`, { method: 'POST', body: { blocked: !p.moderationBlocked, reason } })); }}>
@@ -70,10 +70,10 @@ export default function Moderation() {
                 <Td>{'★'.repeat(r.rating)}</Td>
                 <Td className="max-w-xs">{r.text}</Td>
                 <Td className="text-xs text-amber-700">{r.reportReason}</Td>
-                <Td><Badge tone={statusTone(r.status)}>{r.status}</Badge></Td>
+                <Td><Badge tone={statusTone(r.status)}>{st(r.status)}</Badge></Td>
                 <Td>
                   <Button size="sm" variant="secondary" onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(`/admin/reviews/${r.id}/moderate`, { method: 'POST', body: { status: r.status === 'published' ? 'hidden' : 'published', reason } })); }}>
-                    {r.status === 'published' ? t('block') : t('publish')}
+                    {r.status === 'published' ? t('hideAction') : t('publish')}
                   </Button>
                 </Td>
               </tr>

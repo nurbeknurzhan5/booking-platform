@@ -119,5 +119,5 @@ test('вход сотрудника: владелец видит записи в
   const menu = page.getByRole('button', { name: 'menu' });
   if (await menu.isVisible()) await menu.click();
   await page.getByRole('link', { name: 'Записи', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Записи' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Записи', exact: true })).toBeVisible();
 });

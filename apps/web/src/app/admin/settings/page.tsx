@@ -44,7 +44,9 @@ export default function SystemSettingsPage() {
         >
           <div className="sm:col-span-3"><Alert>{msg.err}</Alert>{msg.ok && <Alert tone="green">{msg.ok}</Alert>}</div>
           {(Object.keys(data) as Array<keyof Settings>).map((k) => (
-            <Field key={k} label={k}><Input type="number" min={0} value={data[k]} onChange={(e) => setData({ ...data, [k]: Number(e.target.value) })} /></Field>
+            <Field key={k} label={t(`sys_${k}` as 'sys_otpTtlSeconds')} hint={t(`sysHint_${k}` as 'sysHint_otpTtlSeconds')}>
+              <Input type="number" min={0} value={data[k]} onChange={(e) => setData({ ...data, [k]: Number(e.target.value) })} />
+            </Field>
           ))}
           <div className="sm:col-span-3"><Button type="submit">{t('save')}</Button></div>
         </form>

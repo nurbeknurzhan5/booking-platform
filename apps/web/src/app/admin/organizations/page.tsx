@@ -18,7 +18,7 @@ interface OrgRow {
 }
 
 export default function AdminOrganizations() {
-  const { t } = useT();
+  const { t, st } = useT();
   const [search, setSearch] = useState('');
   const list = useApi<OrgRow[]>(`/admin/organizations${search ? `?search=${encodeURIComponent(search)}` : ''}`);
   const plans = useApi<Array<{ id: string; name: string; maxBranches: number; monthlyPrice: number }>>('/admin/plans');
@@ -38,10 +38,10 @@ export default function AdminOrganizations() {
             {(list.data ?? []).map((o) => (
               <tr key={o.id} className="hover:bg-slate-50">
                 <Td><Link href={`/admin/organizations/${o.id}`} className="font-medium text-brand-700">{o.name}</Link></Td>
-                <Td>{o.businessCategoryCode}</Td>
+                <Td>{cats.data?.find((c) => c.code === o.businessCategoryCode)?.nameRu ?? o.businessCategoryCode}</Td>
                 <Td className="text-xs">{o.owners.map((x) => x.email).join(', ')}</Td>
                 <Td>{o.branches}{o.subscription ? ` / ${o.subscription.maxBranches}` : ''}</Td>
-                <Td>{o.subscription ? <><Badge tone={statusTone(o.subscription.status)}>{o.subscription.status}</Badge> <span className="text-xs text-slate-500">{o.subscription.plan.name} · {new Date(o.subscription.endsAt).toLocaleDateString('ru-RU')}</span></> : '—'}</Td>
+                <Td>{o.subscription ? <><Badge tone={statusTone(o.subscription.status)}>{st(o.subscription.status)}</Badge> <span className="text-xs text-slate-500">{o.subscription.plan.name} · {new Date(o.subscription.endsAt).toLocaleDateString('ru-RU')}</span></> : '—'}</Td>
               </tr>
             ))}
           </Table>

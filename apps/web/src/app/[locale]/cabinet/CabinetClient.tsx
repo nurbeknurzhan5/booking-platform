@@ -47,8 +47,9 @@ export function CabinetClient({ lang }: { lang: string }) {
   const [waitlist, setWaitlist] = useState<WaitlistEntryView[] | null>(null);
 
   useEffect(() => {
-    api<Me>('/auth/me')
-      .then(setMe)
+    // /auth/session отвечает 200 и гостю — без ошибки 401 в консоли браузера.
+    api<(Me & { authenticated: true }) | { authenticated: false }>('/auth/session')
+      .then((s) => setMe(s.authenticated ? s : null))
       .catch(() => setMe(null));
   }, []);
 

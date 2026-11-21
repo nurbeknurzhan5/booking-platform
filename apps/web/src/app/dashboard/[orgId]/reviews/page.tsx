@@ -22,7 +22,7 @@ interface Review {
 /** Отзывы: ответ организации и жалоба модератору; изменить текст отзыва нельзя (§14). */
 export default function ReviewsPage() {
   const { base, branch } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const list = useApi<Review[]>(branch ? `${base}/reviews?branchId=${branch.id}` : null);
   const [reply, setReply] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export default function ReviewsPage() {
                   <p className="mt-1 text-xs text-slate-500">{r.authorName} · {new Date(r.createdAt).toLocaleDateString('ru-RU')} · {r.appointment.items.map((i) => i.serviceNameSnapshot).join(', ')}</p>
                 </div>
                 <div className="flex gap-1">
-                  <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                  <Badge tone={statusTone(r.status)}>{st(r.status)}</Badge>
                   {r.reportedAt && <Badge tone="amber">{t('report')}</Badge>}
                 </div>
               </div>

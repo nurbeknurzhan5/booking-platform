@@ -18,6 +18,19 @@ import { BRANCH_PERMISSIONS } from './permissions';
 import { normalizePhone, normalizeKzMobile, isKzPhone } from './phone';
 import { SLUG_REGEX, isSafeHttpUrl } from './text';
 
+/**
+ * Схема частичного обновления (PATCH): все поля необязательны и БЕЗ значений по умолчанию.
+ * В Zod 4 `.partial()` сохраняет `.default()`, и отсутствующее поле получало бы значение по умолчанию:
+ * например, `branches: []` отвязывал услугу от всех филиалов, а `isActive: true` включал отключённый тариф.
+ */
+export function updateSchemaOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>) {
+  const shape: Record<string, z.ZodType> = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    shape[key] = field instanceof z.ZodDefault ? (field.removeDefault() as z.ZodType) : (field as z.ZodType);
+  }
+  return z.object(shape).partial() as unknown as ReturnType<z.ZodObject<T>['partial']>;
+}
+
 // ---------- примитивы ----------
 export const zId = z.uuid();
 export const zLocale = z.enum(LOCALES);
@@ -128,7 +141,7 @@ export const BranchInputSchema = z.object({
   mapUrl: zHttpUrl.optional(),
   mapEnabled: z.boolean().optional(),
 });
-export const UpdateBranchSchema = BranchInputSchema.partial().omit({ slug: true });
+export const UpdateBranchSchema = updateSchemaOf(BranchInputSchema).omit({ slug: true });
 
 // ---------- пользователи ----------
 export const BranchAccessSchema = z.object({
@@ -170,7 +183,7 @@ export const ServiceInputSchema = z.object({
     .max(100)
     .default([]),
 });
-export const UpdateServiceSchema = ServiceInputSchema.partial();
+export const UpdateServiceSchema = updateSchemaOf(ServiceInputSchema);
 
 export const ServiceCategoryInputSchema = z.object({ name: zName, sortOrder: z.number().int().min(0).default(0) });
 
@@ -183,7 +196,7 @@ export const ResourceInputSchema = z.object({
   serviceIds: z.array(zId).max(500).default([]),
   sortOrder: z.number().int().min(0).default(0),
 });
-export const UpdateResourceSchema = ResourceInputSchema.partial().omit({ type: true });
+export const UpdateResourceSchema = updateSchemaOf(ResourceInputSchema).omit({ type: true });
 
 export const SpecialistInputSchema = z.object({
   name: zName,
@@ -198,7 +211,7 @@ export const SpecialistInputSchema = z.object({
     .max(500)
     .default([]),
 });
-export const UpdateSpecialistSchema = SpecialistInputSchema.partial();
+export const UpdateSpecialistSchema = updateSchemaOf(SpecialistInputSchema);
 
 // ---------- расписание ----------
 export const WeeklyScheduleSchema = z.object({
@@ -564,7 +577,7 @@ export const PlanInputSchema = z.object({
   monthlyPrice: zMoney,
   isActive: z.boolean().default(true),
 });
-export const UpdatePlanSchema = PlanInputSchema.partial().omit({ code: true });
+export const UpdatePlanSchema = updateSchemaOf(PlanInputSchema).omit({ code: true });
 
 export const CreateOrganizationSchema = z.object({
   name: zName,

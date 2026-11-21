@@ -13,7 +13,7 @@ const STATUSES = ['', 'pending_otp', 'confirmed', 'completed', 'no_show', 'cance
 /** Календарь и список записей филиала (§18.2). */
 export default function AppointmentsPage() {
   const { base, branch, can } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const tz = branch?.timezone ?? 'Asia/Almaty';
   const [date, setDate] = useState(localISODate(new Date(), tz));
   const [status, setStatus] = useState('');
@@ -55,7 +55,7 @@ export default function AppointmentsPage() {
           <Button variant="secondary" size="sm" onClick={() => setDate(addDays(date, 1))}>→</Button>
           <Button variant="ghost" size="sm" onClick={() => setDate(localISODate(new Date(), tz))}>{t('today')}</Button>
           <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-auto">
-            {STATUSES.map((s) => <option key={s} value={s}>{s || t('status')}</option>)}
+            {STATUSES.map((s) => <option key={s} value={s}>{s ? st(s) : `${t('status')}: —`}</option>)}
           </Select>
         </div>
         <Tabs value={view} onChange={setView} items={[{ value: 'calendar', label: t('calendar') }, { value: 'list', label: t('appointments') }]} />
@@ -106,7 +106,7 @@ export default function AppointmentsPage() {
                 <Td>{a.items.map((i) => i.serviceNameSnapshot).join(', ')}</Td>
                 <Td>{[...new Set(a.items.map((i) => i.specialistNameSnapshot).filter(Boolean))].join(', ')}</Td>
                 <Td>{money(a.totalPrice)}</Td>
-                <Td><Badge tone={statusTone(a.status)}>{a.status}</Badge></Td>
+                <Td><Badge tone={statusTone(a.status)}>{st(a.status)}</Badge></Td>
               </tr>
             ))}
           </Table>

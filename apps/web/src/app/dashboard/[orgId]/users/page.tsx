@@ -22,6 +22,36 @@ const BRANCH_PERMISSIONS = [
 ];
 const DEFAULT = ['appointments.view', 'appointments.manage', 'clients.view', 'resources.manage', 'analytics.view'];
 
+/** Названия прав по филиалу (§3.2). */
+const PERM_LABELS: Record<'ru' | 'kk', Record<string, string>> = {
+  ru: {
+    'appointments.view': 'Просмотр записей',
+    'appointments.manage': 'Управление записями (создание, перенос, отмена, выполнение)',
+    'clients.view': 'Просмотр клиентов',
+    'services.manage': 'Услуги',
+    'specialists.manage': 'Специалисты',
+    'resources.manage': 'Ресурсы (кабинеты, посты, оборудование)',
+    'schedules.manage': 'Расписания',
+    'reviews.manage': 'Ответы на отзывы',
+    'analytics.view': 'Статистика филиала',
+    'pages.edit': 'Редактирование страницы',
+    'branch.settings.manage': 'Настройки и правила записи филиала',
+  },
+  kk: {
+    'appointments.view': 'Жазбаларды қарау',
+    'appointments.manage': 'Жазбаларды басқару (құру, ауыстыру, болдырмау, орындау)',
+    'clients.view': 'Клиенттерді қарау',
+    'services.manage': 'Қызметтер',
+    'specialists.manage': 'Мамандар',
+    'resources.manage': 'Ресурстар (кабинеттер, бекеттер, жабдықтар)',
+    'schedules.manage': 'Кестелер',
+    'reviews.manage': 'Пікірлерге жауап беру',
+    'analytics.view': 'Филиал статистикасы',
+    'pages.edit': 'Бетті өңдеу',
+    'branch.settings.manage': 'Филиал баптаулары мен жазылу ережелері',
+  },
+};
+
 interface Staff {
   userId: string;
   role: string;
@@ -37,13 +67,25 @@ type Access = Record<string, string[]>;
 /** Пользователи и права: администраторы филиалов, выдача и отзыв прав (§3.3). */
 export default function UsersPage() {
   const { base, branches } = useOrg();
-  const { t } = useT();
+  const { t, st, lang } = useT();
   const list = useApi<Staff[]>(`${base}/users`);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+    setError(null);
+    setNotice(null);
+    try {
+      await fn();
+      if (ok) setNotice(ok);
+      await list.reload();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
   const [create, setCreate] = useState(false);
   const [form, setForm] = useState({ email: '', name: '', temporaryPassword: '' });
   const [access, setAccess] = useState<Access>({});
   const [editUser, setEditUser] = useState<Staff | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const AccessEditor = ({ value, onChange }: { value: Access; onChange: (v: Access) => void }) => (
     <div className="space-y-3">
@@ -55,7 +97,7 @@ export default function UsersPage() {
             {perms && (
               <div className="mt-2 grid gap-1 pl-6 sm:grid-cols-2">
                 {BRANCH_PERMISSIONS.map((p) => (
-                  <Checkbox key={p} checked={perms.includes(p)} onChange={(e) => onChange({ ...value, [b.id]: e.target.checked ? [...perms, p] : perms.filter((x) => x !== p) })} label={<span className="text-xs">{p}</span>} />
+                  <Checkbox key={p} checked={perms.includes(p)} onChange={(e) => onChange({ ...value, [b.id]: e.target.checked ? [...perms, p] : perms.filter((x) => x !== p) })} label={<span className="text-xs">{PERM_LABELS[lang][p] ?? p}</span>} />
                 ))}
               </div>
             )}
@@ -69,6 +111,8 @@ export default function UsersPage() {
   return (
     <div>
       <PageHeader title={t('users')} actions={<Button onClick={() => { setCreate(true); setAccess({}); }} data-testid="invite-admin">+ {t('inviteAdmin')}</Button>} />
+      {!create && !editUser && <Alert>{error}</Alert>}
+      <Alert tone="green">{notice}</Alert>
       <Card>
         {list.loading ? <Spinner /> : (
           <Table head={[t('personName'), t('email'), t('status'), t('branches'), '']} empty={!list.data?.length}>
@@ -76,13 +120,23 @@ export default function UsersPage() {
               <tr key={u.userId}>
                 <Td className="font-medium">{u.name}</Td>
                 <Td>{u.email}</Td>
-                <Td><Badge tone={u.role === 'OWNER' ? 'blue' : 'slate'}>{t(`role_${u.role}` as 'role_OWNER')}</Badge>{u.blocked && <Badge tone="red">blocked</Badge>}</Td>
+                <Td><Badge tone={u.role === 'OWNER' ? 'blue' : 'slate'}>{t(`role_${u.role}` as 'role_OWNER')}</Badge>{u.blocked && <Badge tone="red">{st('blocked')}</Badge>}</Td>
                 <Td className="text-xs">{u.role === 'OWNER' ? t('allBranches') : u.branchAccess.map((a) => `${branches.find((b) => b.id === a.branchId)?.name} (${a.permissions.length})`).join(', ')}</Td>
                 <Td>
                   {u.role === 'BRANCH_ADMIN' && (
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       <Button size="sm" variant="secondary" onClick={() => { setEditUser(u); setAccess(Object.fromEntries(u.branchAccess.map((a) => [a.branchId, a.permissions]))); }}>{t('permissions')}</Button>
-                      <Button size="sm" variant="ghost" onClick={async () => { if (!confirm(`${t('revoke')}?`)) return; await api(`${base}/users/${u.userId}`, { method: 'DELETE' }); await list.reload(); }}>{t('revoke')}</Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          const temporaryPassword = prompt(t('temporaryPasswordPrompt'));
+                          if (temporaryPassword) void run(() => api(`${base}/users/${u.userId}/reset-password`, { method: 'POST', body: { temporaryPassword } }), t('passwordResetDone'));
+                        }}
+                      >
+                        {t('resetPassword')}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { if (confirm(`${t('revoke')}?`)) void run(() => api(`${base}/users/${u.userId}`, { method: 'DELETE' })); }}>{t('revoke')}</Button>
                     </div>
                   )}
                 </Td>

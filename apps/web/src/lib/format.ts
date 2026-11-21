@@ -49,10 +49,23 @@ export function addDays(isoDate: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Названия дней недели — статические. Через Intl нельзя: данные казахской локали в ICU сервера (Node)
+ * и браузера различаются, из-за этого страница отрисовывалась по-разному и React сообщал об ошибке гидратации (#418).
+ */
+const WEEKDAYS: Record<string, readonly string[]> = {
+  ru: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'],
+  kk: ['Дүйсенбі', 'Сейсенбі', 'Сәрсенбі', 'Бейсенбі', 'Жұма', 'Сенбі', 'Жексенбі'],
+  en: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+};
+
+/** Дата «дд.мм.гггг» в фиксированном поясе: одинакова на сервере и в браузере (без ошибки гидратации). */
+export function shortDate(iso: string, lang: string = 'ru', timeZone = 'Asia/Almaty'): string {
+  return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'ru-RU', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso));
+}
+
 export function weekdayName(isoWeekday: number, lang: string = 'ru'): string {
-  // 2024-01-01 — понедельник
-  const d = new Date(Date.UTC(2024, 0, isoWeekday));
-  return new Intl.DateTimeFormat(intlLocale(lang), { weekday: 'long', timeZone: 'UTC' }).format(d);
+  return (WEEKDAYS[lang] ?? WEEKDAYS.ru)[(isoWeekday - 1 + 7) % 7]!;
 }
 
 export function formatPhone(e164: string | null | undefined): string {

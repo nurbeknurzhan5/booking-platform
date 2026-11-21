@@ -107,10 +107,13 @@ function BranchSettings({ branch, onSaved, canEdit }: { branch: BranchFull; onSa
             {['Asia/Almaty', 'Asia/Qostanay', 'Asia/Aqtobe', 'Asia/Aqtau', 'Asia/Atyrau', 'Asia/Oral', 'Asia/Qyzylorda'].map((z) => <option key={z}>{z}</option>)}
           </Select>
         </Field>
-        <Field label="2GIS URL"><Input value={f.mapUrl ?? ''} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} disabled={!canEdit} placeholder="https://2gis.kz/..." /></Field>
-        <Field label="Latitude"><Input type="number" step="any" value={f.latitude ?? ''} onChange={(e) => setF({ ...f, latitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} /></Field>
-        <Field label="Longitude"><Input type="number" step="any" value={f.longitude ?? ''} onChange={(e) => setF({ ...f, longitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} /></Field>
-        <Checkbox checked={f.mapEnabled} onChange={(e) => setF({ ...f, mapEnabled: e.target.checked })} label="2GIS" disabled={!canEdit} />
+        <Field label={t('mapUrl')}><Input value={f.mapUrl ?? ''} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} disabled={!canEdit} placeholder="https://2gis.kz/..." /></Field>
+        <Field label={t('latitude')}><Input type="number" step="any" value={f.latitude ?? ''} onChange={(e) => setF({ ...f, latitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} placeholder="43.2389" /></Field>
+        <Field label={t('longitude')}><Input type="number" step="any" value={f.longitude ?? ''} onChange={(e) => setF({ ...f, longitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} placeholder="76.8897" /></Field>
+        <div className="sm:col-span-2">
+          <Checkbox checked={f.mapEnabled} onChange={(e) => setF({ ...f, mapEnabled: e.target.checked })} label={t('mapEnabled')} disabled={!canEdit} />
+          <p className="mt-1 text-xs text-slate-500">{t('mapHint')}</p>
+        </div>
         {canEdit && <div className="flex justify-end sm:col-span-2"><Button type="submit">{t('save')}</Button></div>}
       </form>
     </Card>

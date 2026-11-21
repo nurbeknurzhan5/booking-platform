@@ -171,7 +171,7 @@ export default function PageEditor() {
               <Field label={t('hiddenSections')}>
                 <div className="grid grid-cols-2 gap-1">
                   {SECTIONS.map((s) => (
-                    <Checkbox key={s} checked={c.hiddenSections.includes(s)} onChange={(ev) => setC({ hiddenSections: ev.target.checked ? [...c.hiddenSections, s] : c.hiddenSections.filter((x) => x !== s) })} label={s} />
+                    <Checkbox key={s} checked={c.hiddenSections.includes(s)} onChange={(ev) => setC({ hiddenSections: ev.target.checked ? [...c.hiddenSections, s] : c.hiddenSections.filter((x) => x !== s) })} label={t(`sec_${s}` as 'sec_about')} />
                   ))}
                 </div>
               </Field>

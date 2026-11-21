@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
 import {
@@ -7,11 +7,12 @@ import {
   CreateStaffUserSchema,
   DEFAULT_NOTIFICATION_SETTINGS,
   NotificationSettingsSchema,
+  ResetUserPasswordSchema,
   UpdateBranchSchema,
   UpdateOrganizationSchema,
   UpdateStaffAccessSchema,
 } from '@booking/shared';
-import { Actor, AnyMember, RequirePermission, Tenant } from '../common/decorators';
+import { Actor, AnyMember, RateLimit, RequirePermission, Tenant } from '../common/decorators';
 import type { ActorContext, TenantContext } from '../common/request-context';
 import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
@@ -27,6 +28,7 @@ class BookingSettingsDto extends createZodDto(BookingSettingsSchema) {}
 class NotificationSettingsDto extends createZodDto(NotificationSettingsSchema) {}
 class CreateStaffDto extends createZodDto(CreateStaffUserSchema) {}
 class UpdateAccessDto extends createZodDto(UpdateStaffAccessSchema) {}
+class ResetStaffPasswordDto extends createZodDto(ResetUserPasswordSchema.pick({ temporaryPassword: true })) {}
 
 @ApiTags('organizations')
 @Controller('organizations/:orgId')
@@ -166,6 +168,15 @@ export class OrganizationsController {
   @ApiOperation({ summary: 'Создать администратора филиала с временным паролем' })
   createStaff(@Tenant() t: TenantContext, @Body() body: CreateStaffDto, @Actor() actor: ActorContext) {
     return this.staff.create(t.organizationId, body, actor, { allowOwner: t.isSuperadmin });
+  }
+
+  @Post('users/:userId/reset-password')
+  @HttpCode(204)
+  @RequirePermission('users.manage')
+  @RateLimit({ name: 'staff-reset-password', limit: 10, windowSec: 3600, by: 'user' })
+  @ApiOperation({ summary: 'Восстановить доступ администратору филиала: временный пароль и смена при входе' })
+  resetStaffPassword(@Tenant() t: TenantContext, @Param('userId', ParseUUIDPipe) userId: string, @Body() body: ResetStaffPasswordDto, @Actor() actor: ActorContext) {
+    return this.staff.resetPassword(t.organizationId, userId, body.temporaryPassword, actor);
   }
 
   @Put('users/:userId/access')

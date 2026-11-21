@@ -55,6 +55,17 @@ export class AuthController {
     return this.auth.clientVerifyOtp(body, req, res);
   }
 
+  /** Проверка входа без ошибки 401 для гостя: страницы, доступные и гостю, и клиенту (кабинет). */
+  @Public()
+  @Get('session')
+  @ApiOperation({ summary: 'Текущая сессия: { authenticated: false } для гостя, иначе профиль' })
+  async session(@Req() req: Request & { user?: AuthUser }) {
+    const user = req.user;
+    if (!user) return { authenticated: false as const };
+    const p = await this.auth.profile(user.id);
+    return { authenticated: true as const, ...p, sessionKind: user.sessionKind, mfaVerified: user.mfaVerified };
+  }
+
   @ClientAccess()
   @AllowPasswordChangePending()
   @Get('me')

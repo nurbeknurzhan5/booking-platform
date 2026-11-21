@@ -64,6 +64,7 @@
 | `GET` | `/api/v1/auth/csrf` | Выдать CSRF-токен (cookie bk_csrf + тело) |  |  | по маршруту |
 | `POST` | `/api/v1/auth/logout` | Выход (отзыв текущей сессии) |  |  | по маршруту |
 | `GET` | `/api/v1/auth/me` | Текущий пользователь и членство в организациях |  |  | по маршруту |
+| `GET` | `/api/v1/auth/session` | Текущая сессия: { authenticated: false } для гостя, иначе профиль |  |  | по маршруту |
 | `POST` | `/api/v1/auth/staff/change-password` | Сменить пароль (обязательно после выдачи временного) |  | да | по маршруту |
 | `POST` | `/api/v1/auth/staff/login` | Вход сотрудника (email + пароль; суперадмин — + TOTP) |  | да | по маршруту |
 
@@ -140,6 +141,7 @@
 | `POST` | `/api/v1/organizations/{orgId}/users` | Создать администратора филиала с временным паролем |  | да | сотрудник организации (RBAC) |
 | `DELETE` | `/api/v1/organizations/{orgId}/users/{userId}` | Отозвать доступ сотрудника | userId |  | сотрудник организации (RBAC) |
 | `PUT` | `/api/v1/organizations/{orgId}/users/{userId}/access` | Выдать/отозвать права администратора по филиалам | userId | да | сотрудник организации (RBAC) |
+| `POST` | `/api/v1/organizations/{orgId}/users/{userId}/reset-password` | Восстановить доступ администратору филиала: временный пароль и смена при входе | userId | да | сотрудник организации (RBAC) |
 
 ## promotions
 

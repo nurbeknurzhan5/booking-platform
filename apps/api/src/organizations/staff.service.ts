@@ -96,6 +96,30 @@ export class StaffService {
     });
   }
 
+  /**
+   * Восстановление доступа администратору филиала владельцем (D-35): временный пароль, смена при входе,
+   * отзыв сессий. Только для BRANCH_ADMIN этой организации, у которого нет ролей в других организациях и
+   * который не суперадминистратор: пароль общий для всех организаций пользователя.
+   */
+  async resetPassword(organizationId: string, userId: string, temporaryPassword: string, actor: ActorContext) {
+    if (actor.userId === userId) throw AppError.badRequest('VALIDATION_ERROR', 'Для своей учётной записи используйте смену пароля');
+    const m = await this.membership(organizationId, userId);
+    if (m.roleCode !== 'BRANCH_ADMIN') throw AppError.forbidden('Пароль владельца восстанавливает администратор платформы');
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { isSuperadmin: true } });
+    const elsewhere = await this.prisma.userOrganizationRole.count({ where: { userId, revokedAt: null, organizationId: { not: organizationId } } });
+    if (user.isSuperadmin || elsewhere > 0) {
+      throw AppError.forbidden('Сотрудник работает и в других организациях — пароль восстанавливает администратор платформы');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash: await this.passwords.hash(temporaryPassword), mustChangePassword: true, failedLoginCount: 0, lockedUntil: null },
+      });
+      await tx.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      await this.audit.log(actor, 'staff.password_reset', 'user', userId, { organizationId }, tx);
+    });
+  }
+
   private async membership(organizationId: string, userId: string) {
     const m = await this.prisma.userOrganizationRole.findFirst({ where: { organizationId, userId, revokedAt: null } });
     if (!m) throw AppError.notFound('Сотрудник');
