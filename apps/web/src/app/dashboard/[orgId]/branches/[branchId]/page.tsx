@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useOrg } from '@/components/dashboard/OrgContext';
 import { useApi } from '@/lib/hooks';
@@ -55,6 +55,7 @@ export default function BranchDetailPage() {
       />
       <Tabs value={tab} onChange={setTab} items={tabs} />
       {tab === 'settings' && <BranchSettings branch={b} onSaved={branch.reload} canEdit={can('branch.settings.manage', b.id)} />}
+      {tab === 'settings' && isOwner && can('branches.manage') && <ArchiveBranch branch={b} />}
       {tab === 'rules' && <BookingRules branchId={b.id} />}
       {tab === 'specialists' && <SpecialistsTab branchId={b.id} />}
       {tab === 'resources' && <ResourcesTab branchId={b.id} />}
@@ -222,6 +223,38 @@ function BookingRules({ branchId }: { branchId: string }) {
         </fieldset>
         <div className="flex justify-end"><Button type="submit">{t('save')}</Button></div>
       </form>
+    </Card>
+  );
+}
+
+/** Архивация филиала (только владелец): страница отключается, история записей сохраняется. */
+function ArchiveBranch({ branch }: { branch: BranchFull }) {
+  const { base, org, reloadBranches } = useOrg();
+  const { t } = useT();
+  const router = useRouter();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Card title={t('archiveBranch')} className="mt-4 border-rose-200">
+      <p className="text-sm text-slate-600">{t('archiveBranchHint')}</p>
+      <div className="mt-3"><Alert>{err}</Alert></div>
+      <Button
+        variant="danger"
+        className="mt-3"
+        data-testid="archive-branch"
+        onClick={async () => {
+          if (!confirm(`${t('archiveBranch')}: ${branch.name}?`)) return;
+          setErr(null);
+          try {
+            await api(`${base}/branches/${branch.id}`, { method: 'DELETE' });
+            await reloadBranches();
+            router.push(`/dashboard/${org.id}/branches`);
+          } catch (e) {
+            setErr(errorMessage(e));
+          }
+        }}
+      >
+        {t('archiveBranch')}
+      </Button>
     </Card>
   );
 }

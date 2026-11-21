@@ -5,6 +5,7 @@ import { PrismaService, type Tx } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { AuditService } from '../common/audit.service';
 import { TranslationService } from '../pages/translation.service';
+import { StorageService } from '../files/storage.service';
 import type { ActorContext, TenantContext } from '../common/request-context';
 
 type SpecialistInput = z.infer<typeof SpecialistInputSchema>;
@@ -25,7 +26,15 @@ export class ResourcesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly translations: TranslationService,
+    private readonly storage: StorageService,
   ) {}
+
+  /** Ссылка на миниатюру фото для кабинета (в БД хранятся ключи хранилища, а не URL). */
+  private withPhotoUrl<T extends { photo: { id: string; variants: unknown } | null }>(s: T) {
+    const v = (s.photo?.variants ?? null) as Record<string, string> | null;
+    const key = v?.thumb ?? v?.medium ?? null;
+    return { ...s, photoUrl: key ? this.storage.publicUrl(key) : null };
+  }
 
   /** Услуги должны принадлежать организации и быть доступны в филиале. */
   private async assertServicesInBranch(tx: Tx, organizationId: string, branchId: string, serviceIds: string[]) {
@@ -48,18 +57,19 @@ export class ResourcesService {
   }
 
   // ---------- специалисты ----------
-  listSpecialists(t: TenantContext, branchId: string) {
-    return this.prisma.specialist.findMany({
+  async listSpecialists(t: TenantContext, branchId: string) {
+    const rows = await this.prisma.specialist.findMany({
       where: { organizationId: t.organizationId, branchId, archivedAt: null },
       include: SPECIALIST_INCLUDE,
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
+    return rows.map((r) => this.withPhotoUrl(r));
   }
 
   async getSpecialist(t: TenantContext, branchId: string, id: string) {
     const s = await this.prisma.specialist.findFirst({ where: { id, organizationId: t.organizationId, branchId, archivedAt: null }, include: SPECIALIST_INCLUDE });
     if (!s) throw AppError.notFound('Специалист');
-    return s;
+    return this.withPhotoUrl(s);
   }
 
   async createSpecialist(t: TenantContext, branchId: string, input: SpecialistInput, actor: ActorContext) {

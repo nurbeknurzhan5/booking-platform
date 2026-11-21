@@ -55,7 +55,7 @@ const empty = (branchId: string | null): Draft => ({
 
 export default function ServicesPage() {
   const { base, branches, branchId, can, canManage } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const services = useApi<Service[]>(`${base}/services`);
   const categories = useApi<Category[]>(`${base}/service-categories`);
   const [edit, setEdit] = useState<Draft | null>(null);
@@ -104,12 +104,12 @@ export default function ServicesPage() {
           <Table head={[t('name'), t('category'), t('duration'), t('price'), t('branches'), t('status')]} empty={!services.data?.length}>
             {(services.data ?? []).map((s) => (
               <tr key={s.id} className={canEdit ? 'cursor-pointer hover:bg-slate-50' : ''} onClick={() => canEdit && setEdit({ ...s, categoryId: s.categoryId })}>
-                <Td><div className="font-medium">{s.name}</div>{s.requirements.length > 0 && <div className="text-xs text-slate-500">{s.requirements.map((r) => `${r.resourceType}×${r.quantity}`).join(', ')}</div>}</Td>
+                <Td><div className="font-medium">{s.name}</div>{s.requirements.length > 0 && <div className="text-xs text-slate-500">{s.requirements.map((r) => `${st(r.resourceType)} × ${r.quantity}`).join(', ')}</div>}</Td>
                 <Td>{s.category?.name ?? '—'}</Td>
                 <Td>{minutesLabel(s.durationMinutes)}</Td>
                 <Td>{money(s.price)}</Td>
                 <Td>{s.branchServices.map((b) => branches.find((x) => x.id === b.branchId)?.name).filter(Boolean).join(', ')}</Td>
-                <Td>{s.isActive ? <Badge tone="green">{t('active')}</Badge> : <Badge>—</Badge>}{!s.onlineBookingEnabled && <Badge tone="amber">offline</Badge>}</Td>
+                <Td>{s.isActive ? <Badge tone="green">{t('active')}</Badge> : <Badge>—</Badge>}{!s.onlineBookingEnabled && <Badge tone="amber">{t('onlineBookingOff')}</Badge>}</Td>
               </tr>
             ))}
           </Table>
@@ -167,7 +167,7 @@ export default function ServicesPage() {
                       key={rt}
                       checked={!!r}
                       onChange={(e) => setEdit({ ...edit, requirements: e.target.checked ? [...edit.requirements, { resourceType: rt, quantity: 1 }] : edit.requirements.filter((x) => x.resourceType !== rt) })}
-                      label={rt}
+                      label={st(rt)}
                     />
                   );
                 })}
@@ -201,7 +201,7 @@ export default function ServicesPage() {
             </fieldset>
             <div className="flex justify-between gap-2 pt-2">
               {edit.id ? (
-                <Button variant="danger" onClick={async () => { await api(`${base}/services/${edit.id}`, { method: 'DELETE' }); setEdit(null); await services.reload(); }}>{t('archive')}</Button>
+                <Button variant="danger" onClick={async () => { if (!confirm(`${t('archive')}: ${edit.name}?`)) return; setError(null); try { await api(`${base}/services/${edit.id}`, { method: 'DELETE' }); setEdit(null); await services.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
               ) : <span />}
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setEdit(null)}>{t('cancel')}</Button>

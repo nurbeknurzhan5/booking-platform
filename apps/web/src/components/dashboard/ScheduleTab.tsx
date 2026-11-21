@@ -74,7 +74,7 @@ export function ScheduleTab({ branchId }: { branchId: string }) {
                         {canEdit && <button className="text-slate-400 hover:text-rose-600" onClick={() => setDay(d.weekday, { intervals: d.intervals.filter((_, k) => k !== i) })}>×</button>}
                       </span>
                     ))}
-                    {canEdit && <Button size="sm" variant="ghost" onClick={() => setDay(d.weekday, { intervals: [...d.intervals, { start: '10:00', end: '20:00' }] })}>+</Button>}
+                    {canEdit && <Button size="sm" variant="ghost" aria-label={t('addInterval')} title={t('addInterval')} data-testid={`add-interval-${d.weekday}`} onClick={() => setDay(d.weekday, { intervals: [...d.intervals, { start: '10:00', end: '20:00' }] })}>+</Button>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="text-xs text-slate-500">{t('breaks')}:</span>
@@ -85,13 +85,36 @@ export function ScheduleTab({ branchId }: { branchId: string }) {
                         {canEdit && <button className="text-slate-400 hover:text-rose-600" onClick={() => setDay(d.weekday, { breaks: d.breaks.filter((_, k) => k !== i) })}>×</button>}
                       </span>
                     ))}
-                    {canEdit && <Button size="sm" variant="ghost" onClick={() => setDay(d.weekday, { breaks: [...d.breaks, { start: '13:00', end: '14:00' }] })}>+</Button>}
+                    {canEdit && <Button size="sm" variant="ghost" aria-label={t('addBreak')} title={t('addBreak')} onClick={() => setDay(d.weekday, { breaks: [...d.breaks, { start: '13:00', end: '14:00' }] })}>+</Button>}
                   </div>
                 </div>
               ))}
             </div>
             {canEdit && (
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex flex-wrap justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid="copy-monday"
+                    onClick={() => {
+                      const mon = days.find((d) => d.weekday === 1);
+                      if (mon) setDays(days.map((d) => ({ ...d, intervals: mon.intervals.map((x) => ({ ...x })), breaks: mon.breaks.map((x) => ({ ...x })) })));
+                    }}
+                  >
+                    {t('copyMondayAll')}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const mon = days.find((d) => d.weekday === 1);
+                      if (mon) setDays(days.map((d) => (d.weekday <= 5 ? { ...d, intervals: mon.intervals.map((x) => ({ ...x })), breaks: mon.breaks.map((x) => ({ ...x })) } : d)));
+                    }}
+                  >
+                    {t('copyMondayWeekdays')}
+                  </Button>
+                </div>
                 <Button
                   onClick={async () => {
                     setMsg({});

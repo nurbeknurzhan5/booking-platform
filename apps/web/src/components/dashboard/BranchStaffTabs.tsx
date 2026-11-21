@@ -19,7 +19,7 @@ interface Specialist {
   specialization: string | null;
   description: string | null;
   photoAssetId: string | null;
-  photo: { variants: Record<string, string> } | null;
+  photoUrl?: string | null;
   isActive: boolean;
   isPublic: boolean;
   sortOrder: number;
@@ -96,7 +96,7 @@ export function SpecialistsTab({ branchId }: { branchId: string }) {
               <Field label={t('specialization')}><Input value={edit.specialization ?? ''} onChange={(e) => setEdit({ ...edit, specialization: e.target.value })} /></Field>
               <Field label={t('description')} className="sm:col-span-2"><Textarea rows={2} value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>
             </div>
-            <Field label={t('photos')}><ImageUpload kind="specialist" value={edit.photoAssetId} preview={edit.photo?.variants ? null : null} onChange={(id) => setEdit({ ...edit, photoAssetId: id })} /></Field>
+            <Field label={t('photos')}><ImageUpload kind="specialist" value={edit.photoAssetId} preview={edit.photoUrl ?? null} onChange={(id) => setEdit({ ...edit, photoAssetId: id })} /></Field>
             <div className="flex gap-4">
               <Checkbox checked={edit.isActive ?? true} onChange={(e) => setEdit({ ...edit, isActive: e.target.checked })} label={t('active')} />
               <Checkbox checked={edit.isPublic ?? true} onChange={(e) => setEdit({ ...edit, isPublic: e.target.checked })} label={t('publicVisible')} />
@@ -135,7 +135,7 @@ const TYPES = ['cabinet', 'hall', 'equipment', 'vehicle', 'service_bay', 'other'
 /** Ресурсы: кабинеты, залы, оборудование, автомобили, посты (§6). */
 export function ResourcesTab({ branchId }: { branchId: string }) {
   const { base, can, canManage } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const list = useApi<Resource[]>(`${base}/branches/${branchId}/resources`);
   const services = useBranchServices(branchId);
   const [edit, setEdit] = useState<(Partial<Resource> & { serviceIds: string[] }) | null>(null);
@@ -149,7 +149,7 @@ export function ResourcesTab({ branchId }: { branchId: string }) {
           {(list.data ?? []).map((r) => (
             <tr key={r.id} className={canEdit ? 'cursor-pointer hover:bg-slate-50' : ''} onClick={() => canEdit && setEdit({ ...r, serviceIds: r.services.map((s) => s.serviceId) })}>
               <Td className="font-medium">{r.name}</Td>
-              <Td>{r.type}</Td>
+              <Td>{st(r.type)}</Td>
               <Td>{r.services.map((x) => services.data?.find((y) => y.id === x.serviceId)?.name).filter(Boolean).join(', ')}</Td>
               <Td>{r.isActive ? <Badge tone="green">{t('active')}</Badge> : <Badge>—</Badge>}</Td>
             </tr>
@@ -163,7 +163,7 @@ export function ResourcesTab({ branchId }: { branchId: string }) {
             <Field label={t('name')}><Input value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label={t('type')}>
               <Select value={edit.type} disabled={!!edit.id} onChange={(e) => setEdit({ ...edit, type: e.target.value })}>
-                {TYPES.map((x) => <option key={x}>{x}</option>)}
+                {TYPES.map((x) => <option key={x} value={x}>{st(x)}</option>)}
               </Select>
             </Field>
             <Field label={t('description')}><Textarea rows={2} value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>

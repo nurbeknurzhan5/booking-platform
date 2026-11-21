@@ -9,7 +9,7 @@ import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, statusTone
 
 export default function BranchesPage() {
   const { org, branches, reloadBranches, isOwner, canManage } = useOrg();
-  const { t } = useT();
+  const { t, st } = useT();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', phone: '', slug: '' });
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export default function BranchesPage() {
                   <div className="text-sm text-slate-500">{b.address ?? '—'}</div>
                   <div className="mt-1 text-xs text-slate-400">/b/{b.slug}</div>
                 </div>
-                {b.page && <Badge tone={statusTone(b.page.status)}>{b.page.publishedPublicationId ? t(`st_${b.page.status}` as 'st_active') : 'draft'}</Badge>}
+                {b.page && <Badge tone={statusTone(b.page.status)}>{b.page.publishedPublicationId ? t(`st_${b.page.status}` as 'st_active') : st('draft')}</Badge>}
               </div>
             </Card>
           </Link>
@@ -56,7 +56,7 @@ export default function BranchesPage() {
           <Field label={t('name')}><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label={t('address')}><Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
           <Field label={t('phone')}><Input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
-          <Field label={t('slug')} hint="latin-letters-and-digits"><Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase() })} pattern="[a-z0-9][a-z0-9-]{1,58}[a-z0-9]" /></Field>
+          <Field label={t('slug')} hint={t('slugHint')}><Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase() })} pattern="[a-z0-9][a-z0-9-]{1,58}[a-z0-9]" /></Field>
           <div className="flex justify-end"><Button type="submit">{t('create')}</Button></div>
         </form>
       </Modal>
