@@ -1036,6 +1036,40 @@
         ]
       }
     },
+    "/api/v1/admin/users/{id}/reset-password": {
+      "post": {
+        "operationId": "AdminController_resetPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "summary": "Восстановить доступ сотруднику: временный пароль и смена при входе",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "operationId": "AdminController_auditLogs",
@@ -2917,6 +2951,21 @@
         "summary": "Журнал уведомлений организации",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/organizations/{orgId}/integrations": {
+      "get": {
+        "operationId": "OrgIntegrationsController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Состояние интеграций организации (без секретов)",
+        "tags": [
+          "organizations"
         ]
       }
     },
@@ -5261,6 +5310,25 @@
           }
         },
         "required": [
+          "reason"
+        ]
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {
+          "temporaryPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 128
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "temporaryPassword",
           "reason"
         ]
       },

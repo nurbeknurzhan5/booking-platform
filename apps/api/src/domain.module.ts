@@ -21,7 +21,7 @@ import { DevInboxChannel, SmsChannel, WhatsAppChannel } from './notifications/ch
 import { WhatsAppWebhookController } from './notifications/whatsapp-webhook.controller';
 import { WhatsAppInboundService } from './notifications/whatsapp-inbound.service';
 import { ReactivationService } from './notifications/reactivation.service';
-import { AdminNotificationsController, DevInboxController, OrgNotificationsController } from './notifications/notifications.controller';
+import { AdminNotificationsController, DevInboxController, OrgIntegrationsController, OrgNotificationsController } from './notifications/notifications.controller';
 import { JobsService } from './common/jobs.service';
 import { AnalyticsService } from './analytics/analytics.service';
 import { AnalyticsController } from './analytics/analytics.controller';
@@ -56,6 +56,7 @@ import { PagesController } from './pages/pages.controller';
     MeWaitlistController,
     WhatsAppWebhookController,
     OrgNotificationsController,
+    OrgIntegrationsController,
     AdminNotificationsController,
     DevInboxController,
     AnalyticsController,

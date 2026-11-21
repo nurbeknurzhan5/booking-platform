@@ -35,6 +35,7 @@ function Shell({ children }: { children: ReactNode }) {
     { href: `${base}/analytics`, label: 'analytics', show: can('analytics.view') },
     { href: `${base}/promotions`, label: 'promotions', show: isOwner },
     { href: `${base}/users`, label: 'users', show: isOwner },
+    { href: `${base}/integrations`, label: 'integrations', show: can('integrations.manage') },
     { href: `${base}/settings`, label: 'organization', show: isOwner },
   ];
 

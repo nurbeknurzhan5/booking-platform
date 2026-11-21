@@ -12,6 +12,8 @@ coverage/
 storage/
 playwright-report/
 test-results/
+# сессия владельца демо-организации для E2E (global-setup)
+apps/web/e2e/.auth/
 apps/api/src/generated/
 *.log
 .DS_Store

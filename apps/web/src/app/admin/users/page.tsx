@@ -23,6 +23,23 @@ export default function AdminUsers() {
   const [s, setS] = useState('');
   const list = useApi<U[]>(`/admin/users${s ? `?search=${encodeURIComponent(s)}` : ''}`);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Восстановление доступа (§3.4): временный пароль сообщается сотруднику лично, при входе он его сменит. */
+  const resetPassword = async (u: U) => {
+    const temporaryPassword = prompt(t('temporaryPasswordPrompt'));
+    if (!temporaryPassword) return;
+    const reason = prompt(t('reason'));
+    if (!reason) return;
+    setError(null);
+    setNotice(null);
+    try {
+      await withMfa(`/admin/users/${u.id}/reset-password`, { method: 'POST', body: { temporaryPassword, reason } });
+      setNotice(t('passwordResetDone'));
+      await list.reload();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
   const toggle = async (u: U) => {
     const reason = prompt(t('reason'));
     if (!reason) return;
@@ -38,6 +55,7 @@ export default function AdminUsers() {
     <div>
       <PageHeader title={t('users')} />
       <Alert>{error}</Alert>
+      <Alert tone="green">{notice}</Alert>
       <Card>
         <Input value={s} onChange={(e) => setS(e.target.value)} placeholder={t('search')} className="mb-3 max-w-sm" />
         {list.loading ? <Spinner /> : (
@@ -49,7 +67,12 @@ export default function AdminUsers() {
                 <Td>{u.phone}</Td>
                 <Td className="text-xs">{u.isSuperadmin ? 'SUPERADMIN ' : ''}{u.orgRoles.map((r) => r.roleCode).join(', ')}</Td>
                 <Td>{u.blockedAt ? <Badge tone="red">blocked</Badge> : <Badge tone="green">ok</Badge>}</Td>
-                <Td>{!u.isSuperadmin && <Button size="sm" variant={u.blockedAt ? 'secondary' : 'danger'} onClick={() => toggle(u)}>{u.blockedAt ? t('unblock') : t('block')}</Button>}</Td>
+                <Td className="space-x-2 whitespace-nowrap">
+                  {u.email && !u.isSuperadmin && (
+                    <Button size="sm" variant="secondary" onClick={() => resetPassword(u)}>{t('resetPassword')}</Button>
+                  )}
+                  {!u.isSuperadmin && <Button size="sm" variant={u.blockedAt ? 'secondary' : 'danger'} onClick={() => toggle(u)}>{u.blockedAt ? t('unblock') : t('block')}</Button>}
+                </Td>
               </tr>
             ))}
           </Table>

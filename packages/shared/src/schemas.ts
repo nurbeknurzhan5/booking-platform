@@ -619,6 +619,8 @@ export const AdminCreateUserSchema = z.object({
   temporaryPassword: zPassword,
 });
 export const BlockUserSchema = z.object({ reason: z.string().min(3).max(500) });
+/** Восстановление доступа сотруднику (§3.4): временный пароль, смена при следующем входе. */
+export const ResetUserPasswordSchema = z.object({ temporaryPassword: zPassword, reason: z.string().min(3).max(500) });
 export const SystemSettingsSchema = z.object({
   otpTtlSeconds: z.number().int().min(60).max(900),
   otpMaxAttempts: z.number().int().min(3).max(10),

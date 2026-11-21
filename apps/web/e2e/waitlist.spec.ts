@@ -1,4 +1,6 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+import { OWNER_STATE } from './global-setup';
+import { csrfHeader, ownerOrgId } from './owner';
 
 /**
  * Лист ожидания (ТЗ §9): владелец включает функцию → клиент встаёт в очередь из формы записи →
@@ -23,31 +25,26 @@ async function inbox(request: APIRequestContext, phone: string, type: string, ti
   throw new Error(`${type} not delivered to ${phone}`);
 }
 
-async function loginOwner(page: Page): Promise<string> {
-  await page.goto('/login');
-  await page.getByTestId('email').fill('owner@demo.kz');
-  await page.getByTestId('password').fill('DemoOwner12345');
-  await page.getByTestId('login-submit').click();
-  await expect(page).toHaveURL(/\/dashboard\/[0-9a-f-]{36}/);
-  return /\/dashboard\/([0-9a-f-]{36})/.exec(page.url())![1]!;
-}
+test.use({ storageState: OWNER_STATE });
 
 function isoDate(daysAhead: number): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Almaty' }).format(new Date(Date.now() + daysAhead * 86400_000));
 }
 
-test('лист ожидания: очередь → освобождение времени → предложение → запись', async ({ page, request }) => {
+test('лист ожидания: очередь → освобождение времени → предложение → запись', async ({ page, playwright, baseURL }) => {
+  // Действия клиентов — в отдельном контексте без сессии владельца (иначе изменяющие запросы требуют CSRF).
+  const request = await playwright.request.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
   test.setTimeout(180_000);
   const day = isoDate(2);
 
   // 1. Владелец включает лист ожидания в правилах записи филиала; прежние заявки демо-филиала снимаются.
-  const orgId = await loginOwner(page);
+  const orgId = await ownerOrgId(page);
   const branches = (await (await page.request.get(`${API}/organizations/${orgId}/branches`)).json()) as Array<{ id: string; slug: string }>;
   const branchId = branches.find((b) => b.slug === SLUG)!.id;
-  const csrf = (await page.context().cookies()).find((c) => c.name === 'bk_csrf')!.value;
+  const headers = await csrfHeader(page);
   const active = (await (await page.request.get(`${API}/organizations/${orgId}/waitlist?branchId=${branchId}&status=active&pageSize=100`)).json()) as { items: Array<{ id: string }> };
   for (const e of active.items) {
-    await page.request.post(`${API}/organizations/${orgId}/waitlist/${e.id}/cancel`, { headers: { 'X-CSRF-Token': csrf }, data: {} });
+    await page.request.post(`${API}/organizations/${orgId}/waitlist/${e.id}/cancel`, { headers, data: {} });
   }
   await page.goto(`/dashboard/${orgId}/branches/${branchId}`);
   await page.getByRole('button', { name: 'Правила бронирования' }).click();
@@ -84,7 +81,9 @@ test('лист ожидания: очередь → освобождение в�
   const serviceId = pub.services.find((s) => s.name === 'Мужская стрижка')!.id;
   const specialistId = pub.specialists.find((s) => s.name.includes('Болат'))!.id;
   const items = [{ serviceId, specialistId }];
-  const slots = (await (await request.post(`${API}/public/branches/${SLUG}/availability`, { data: { date: day, items } })).json()) as { slots: Array<{ startAt: string }> };
+  const avRes = await request.post(`${API}/public/branches/${SLUG}/availability`, { data: { date: day, items } });
+  expect(avRes.status(), await avRes.text()).toBe(200);
+  const slots = (await avRes.json()) as { slots: Array<{ startAt: string }> };
   const startAt = slots.slots[Math.floor(slots.slots.length / 2)]!.startAt;
   const other = uniquePhone('+7708');
   const hold = await request.post(`${API}/public/branches/${SLUG}/bookings`, { data: { startAt, items, client: { name: 'Отменяющий', phone: other }, consents: { personalData: true } } });
@@ -102,8 +101,13 @@ test('лист ожидания: очередь → освобождение в�
   await page.getByTestId('offer-accept').click();
   await expect(page).toHaveURL(/\/ru\/manage\//);
   await expect(page.getByTestId('appointment-status')).toHaveText('Подтверждена');
+  const manageToken = /\/manage\/([A-Za-z0-9_-]+)/.exec(page.url())![1]!;
 
   // Повторное открытие ссылки: предложение уже использовано.
   await page.goto(`/ru/waitlist/${token}`);
   await expect(page.getByTestId('offer-status')).toHaveText('Вы уже записаны по этому предложению.');
+
+  // Уборка: запись отменяется, чтобы повторные прогоны не занимали время Болата в демо-филиале.
+  expect((await request.post(`${API}/public/manage/${manageToken}/cancel`, { data: {} })).status()).toBe(200);
+  await request.dispose();
 });

@@ -7,6 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   timeout: 90_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -20,8 +21,11 @@ export default defineConfig({
     locale: 'ru-RU',
     timezoneId: 'Asia/Almaty',
   },
+  // §25: смартфоны, планшеты, ноутбуки и настольные компьютеры.
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
+    { name: 'desktop', use: { ...devices['Desktop Chrome'] } }, // 1280×720 — ноутбук
+    { name: 'wide', use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } } }, // настольный монитор
+    { name: 'tablet', use: { ...devices['Galaxy Tab S4'] } }, // планшет, сенсорный ввод
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
   ],
   webServer: process.env.CI

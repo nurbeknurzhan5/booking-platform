@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { OWNER_STATE } from './global-setup';
+import { csrfHeader, ownerOrgId } from './owner';
+
+test.use({ storageState: OWNER_STATE });
 
 /**
  * Реактивация (ТЗ §15.1, D-34): владелец включает напоминания о повторном визите в настройках организации.
@@ -7,12 +11,7 @@ import { expect, test } from '@playwright/test';
 const API = '/api/v1';
 
 test('владелец включает реактивацию и задаёт срок; некорректный срок не сохраняется', async ({ page }) => {
-  await page.goto('/login');
-  await page.getByTestId('email').fill('owner@demo.kz');
-  await page.getByTestId('password').fill('DemoOwner12345');
-  await page.getByTestId('login-submit').click();
-  await expect(page).toHaveURL(/\/dashboard\/[0-9a-f-]{36}/);
-  const orgId = /\/dashboard\/([0-9a-f-]{36})/.exec(page.url())![1]!;
+  const orgId = await ownerOrgId(page);
   const settingsUrl = `${API}/organizations/${orgId}/notification-settings`;
   const before = await (await page.request.get(settingsUrl)).json();
 
@@ -35,7 +34,6 @@ test('владелец включает реактивацию и задаёт �
     expect(after).toMatchObject({ reactivationEnabled: true, reactivationDays: 45 });
   } finally {
     // вернуть демо-организации прежние настройки
-    const csrf = (await page.context().cookies()).find((c) => c.name === 'bk_csrf')!.value;
-    await page.request.put(settingsUrl, { headers: { 'X-CSRF-Token': csrf }, data: before });
+    await page.request.put(settingsUrl, { headers: await csrfHeader(page), data: before });
   }
 });

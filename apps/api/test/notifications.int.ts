@@ -210,6 +210,61 @@ describe('Этап 7: WhatsApp Business Platform, outbox, очереди, ста
     });
   });
 
+  it('раздел «Интеграции» владельца (§18.3): состояние каналов и доставка за 7 дней, без секретов; доступ по праву integrations.manage', async () => {
+    const other = await createOrgWithOwner(ctx, admin, { name: 'Чужая' });
+    const { owner, orgId: myOrg } = await createOrgWithOwner(ctx, admin);
+    await ctx.prisma.organization.update({ where: { id: myOrg }, data: { notificationSettings: { whatsappEnabled: true, smsEnabled: false, reminderEnabled: true, reviewRequestEnabled: true } } });
+    await ctx.prisma.$transaction((tx) =>
+      ctx.app.get(NotificationService).enqueue(tx, { organizationId: myOrg, type: 'appointment_confirmed', eventKey: 'evt:int', recipient: '+77015550000', locale: 'ru', params: { clientName: 'A', branchName: 'B', date: 'd', time: 't', manageUrl: 'u' } }),
+    );
+    await dispatcher().drain();
+
+    const r = await owner.get(`${API}/organizations/${myOrg}/integrations`);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({
+      whatsapp: { platformConnected: true, enabledForOrg: true, inboundAutoReply: true, reactivationEnabled: false, last7Days: { sent: 1, failed: 0 } },
+      sms: { platformConnected: true, enabledForOrg: false },
+      email: { available: false },
+      translation: { autoAvailable: false },
+      testMode: false,
+    });
+    expect(JSON.stringify(r.body)).not.toMatch(/test-token|app-secret|sms-key|verify-me/);
+    // чужая организация
+    expect([403, 404]).toContain((await other.owner.get(`${API}/organizations/${myOrg}/integrations`)).status);
+  });
+
+  it('сроки хранения: старые завершённые сообщения и аналитика удаляются; неотправленные и ключи реактивации остаются', async () => {
+    const old = new Date(Date.now() - 400 * 86400_000);
+    const mk = async (key: string, type: 'appointment_confirmed' | 'reactivation' = 'appointment_confirmed') => {
+      await ctx.prisma.$transaction((tx) =>
+        ctx.app.get(NotificationService).enqueue(tx, { organizationId: orgId, type, eventKey: key, recipient: '+77017770000', locale: 'ru', params: {}, forceChannel: 'whatsapp' }),
+      );
+      return ctx.prisma.notificationEvent.findUniqueOrThrow({ where: { dedupeKey: key } });
+    };
+    const sentOld = await mk('evt:old-sent');
+    const pendingOld = await mk('evt:old-pending');
+    const reactOld = await mk('reactivation:c:v', 'reactivation');
+    const fresh = await mk('evt:fresh');
+    await ctx.prisma.notificationOutbox.updateMany({ where: { eventId: { in: [sentOld.id, reactOld.id] } }, data: { status: 'sent', createdAt: old } });
+    await ctx.prisma.notificationOutbox.updateMany({ where: { eventId: pendingOld.id }, data: { createdAt: old } });
+    await ctx.prisma.notificationEvent.updateMany({ where: { id: { in: [sentOld.id, pendingOld.id, reactOld.id] } }, data: { createdAt: old } });
+    const branch = await ctx.prisma.branch.create({ data: { organizationId: orgId, name: 'Ф', slug: `f-${Date.now()}`, timezone: 'Asia/Almaty' } });
+    await ctx.prisma.analyticsEvent.createMany({
+      data: [
+        { organizationId: orgId, branchId: branch.id, type: 'page_view', visitorHash: 'a', occurredAt: new Date(Date.now() - 800 * 86400_000) },
+        { organizationId: orgId, branchId: branch.id, type: 'page_view', visitorHash: 'b' },
+      ],
+    });
+
+    const { RetentionService } = await import('../src/worker/retention.service');
+    const r = await new RetentionService(ctx.prisma).run();
+    expect(r).toMatchObject({ notificationOutbox: 2, notificationEvents: 1, analyticsEvents: 1 });
+    const events = (await ctx.prisma.notificationEvent.findMany()).map((e) => e.dedupeKey).sort();
+    expect(events).toEqual(['evt:fresh', 'evt:old-pending', 'reactivation:c:v']);
+    expect(await ctx.prisma.notificationOutbox.count({ where: { eventId: { in: [pendingOld.id, fresh.id] } } })).toBe(2);
+    expect(await ctx.prisma.analyticsEvent.count({ where: { organizationId: orgId } })).toBe(1);
+  });
+
   it('конфигурация: dev_inbox запрещён в production', () => {
     const { loadConfig } = jest.requireActual('../src/config/config') as typeof import('../src/config/config');
     expect(() => loadConfig({ ...process.env, APP_ENV: 'production', NOTIFICATION_CHANNELS: 'dev_inbox', COOKIE_SECURE: 'true' })).toThrow(/dev_inbox/);

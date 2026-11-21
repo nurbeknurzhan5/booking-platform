@@ -5,6 +5,7 @@ import type { ActorContext, TenantContext } from '../common/request-context';
 import { PrismaService } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { NotificationDispatcher } from './dispatcher.service';
+import { NotificationService } from './notification.service';
 import { AuditService } from '../common/audit.service';
 import { getConfig } from '../config/config';
 import { normalizePhone } from '@booking/shared';
@@ -42,6 +43,72 @@ export class OrgNotificationsController {
       take: 300,
       select: OUTBOX_SELECT,
     });
+  }
+}
+
+/**
+ * Раздел «Интеграции» кабинета владельца (§18.3). Доступы к WhatsApp, SMS и переводу подключаются
+ * на уровне платформы. Владелец видит их состояние, свои включения каналов и результаты доставки
+ * за 7 дней. Секреты не возвращаются.
+ */
+@ApiTags('organizations')
+@Controller('organizations/:orgId/integrations')
+export class OrgIntegrationsController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
+
+  @Get()
+  @RequirePermission('integrations.manage')
+  @ApiOperation({ summary: 'Состояние интеграций организации (без секретов)' })
+  async status(@Tenant() t: TenantContext) {
+    const c = getConfig();
+    const enabled = this.notifications.enabledChannels();
+    const settings = await this.notifications.orgNotificationSettings(this.prisma, t.organizationId);
+    const since = new Date(Date.now() - 7 * 86400_000);
+    const [rows, branches] = await Promise.all([
+      this.prisma.notificationOutbox.groupBy({
+        by: ['channel', 'status'],
+        where: { organizationId: t.organizationId, createdAt: { gte: since } },
+        _count: { _all: true },
+      }),
+      this.prisma.branch.findMany({
+        where: { organizationId: t.organizationId, archivedAt: null },
+        select: { id: true, name: true, mapEnabled: true, mapUrl: true, latitude: true, longitude: true, address: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    const delivery = (channel: string) => {
+      const by = Object.fromEntries(rows.filter((r) => r.channel === channel).map((r) => [r.status, r._count._all]));
+      const sent = (by.sent ?? 0) + (by.delivered ?? 0) + (by.read ?? 0);
+      return { sent, delivered: (by.delivered ?? 0) + (by.read ?? 0), read: by.read ?? 0, failed: by.dead ?? 0, pending: (by.pending ?? 0) + (by.failed ?? 0) + (by.sending ?? 0) };
+    };
+    const waConnected = enabled.includes('whatsapp') && !!(c.WHATSAPP_PHONE_NUMBER_ID && c.WHATSAPP_ACCESS_TOKEN);
+    return {
+      whatsapp: {
+        platformConnected: waConnected,
+        enabledForOrg: settings.whatsappEnabled,
+        inboundAutoReply: waConnected && !!c.WHATSAPP_APP_SECRET,
+        reactivationEnabled: settings.reactivationEnabled,
+        last7Days: delivery('whatsapp'),
+      },
+      sms: { platformConnected: enabled.includes('sms') && !!c.SMS_API_KEY, enabledForOrg: settings.smsEnabled, last7Days: delivery('sms') },
+      email: { available: false },
+      translation: { provider: 'google', autoAvailable: !!c.GOOGLE_TRANSLATE_API_KEY },
+      map: {
+        provider: '2gis',
+        branches: branches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          mapEnabled: b.mapEnabled,
+          hasCoordinates: b.latitude !== null && b.longitude !== null,
+          hasMapUrl: !!b.mapUrl,
+          hasAddress: !!b.address,
+        })),
+      },
+      testMode: enabled.includes('dev_inbox'),
+    };
   }
 }
 

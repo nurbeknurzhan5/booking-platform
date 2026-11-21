@@ -13,6 +13,7 @@ import { TranslationService } from '../pages/translation.service';
 import { WaitlistService } from '../booking/waitlist.service';
 import { ReactivationService } from '../notifications/reactivation.service';
 import { WhatsAppInboundService } from '../notifications/whatsapp-inbound.service';
+import { RetentionService } from './retention.service';
 
 interface Task {
   name: string;
@@ -49,6 +50,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
     private readonly waitlist: WaitlistService,
     private readonly reactivation: ReactivationService,
     private readonly inbound: WhatsAppInboundService,
+    private readonly retention: RetentionService,
   ) {}
 
   tasks(): Task[] {
@@ -71,6 +73,7 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
           await this.sessions.cleanupExpired();
           await this.otp.cleanup();
           await this.inbound.cleanup();
+          await this.retention.run();
         },
       },
     ];

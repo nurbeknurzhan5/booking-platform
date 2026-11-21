@@ -9,6 +9,7 @@ import {
   CreateOrganizationSchema,
   PlanInputSchema,
   RecordPaymentSchema,
+  ResetUserPasswordSchema,
   SetSubscriptionSchema,
   SuspendOrganizationSchema,
   SystemSettingsSchema,
@@ -23,6 +24,7 @@ import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../common/audit.service';
 import { AppError } from '../common/errors';
 import { SessionService } from '../auth/session.service';
+import { PasswordService } from '../auth/password.service';
 import { SystemSettingsService } from '../common/system-settings.service';
 import { getConfig } from '../config/config';
 
@@ -36,6 +38,7 @@ class UpdatePlanDto extends createZodDto(UpdatePlanSchema) {}
 class OwnerDto extends createZodDto(AdminCreateUserSchema) {}
 class BranchDto extends createZodDto(BranchInputSchema) {}
 class BlockDto extends createZodDto(BlockUserSchema) {}
+class ResetPasswordDto extends createZodDto(ResetUserPasswordSchema) {}
 class SystemSettingsDto extends createZodDto(SystemSettingsSchema) {}
 
 @ApiTags('admin')
@@ -50,6 +53,7 @@ export class AdminController {
     private readonly audit: AuditService,
     private readonly sessions: SessionService,
     private readonly systemSettings: SystemSettingsService,
+    private readonly passwords: PasswordService,
   ) {}
 
   // ---------- организации ----------
@@ -194,6 +198,29 @@ export class AdminController {
   async unblock(@Param('id', ParseUUIDPipe) id: string, @Body() body: BlockDto, @Actor() actor: ActorContext) {
     await this.prisma.user.update({ where: { id }, data: { blockedAt: null, blockedReason: null, failedLoginCount: 0, lockedUntil: null } });
     await this.audit.log(actor, 'user.unblocked', 'user', id, { after: { reason: body.reason } });
+  }
+
+  /**
+   * Восстановление доступа (§3.4): временный пароль, обязательная смена при входе,
+   * снятие блокировки после неудачных попыток, отзыв всех сессий. MFA суперадминистратора не сбрасывается.
+   */
+  @Post('users/:id/reset-password')
+  @HttpCode(204)
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Восстановить доступ сотруднику: временный пароль и смена при входе' })
+  async resetPassword(@Param('id', ParseUUIDPipe) id: string, @Body() body: ResetPasswordDto, @Actor() actor: ActorContext) {
+    if (id === actor.userId) throw AppError.badRequest('VALIDATION_ERROR', 'Для своей учётной записи используйте смену пароля');
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+    if (!user) throw AppError.notFound('Пользователь');
+    if (!user.email) {
+      throw AppError.unprocessable('VALIDATION_ERROR', 'У клиента нет пароля: вход выполняется по номеру телефона и коду');
+    }
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash: await this.passwords.hash(body.temporaryPassword), mustChangePassword: true, failedLoginCount: 0, lockedUntil: null },
+    });
+    await this.sessions.revokeAllForUser(id);
+    await this.audit.log(actor, 'user.password_reset', 'user', id, { after: { reason: body.reason } });
   }
 
   // ---------- аудит и настройки ----------

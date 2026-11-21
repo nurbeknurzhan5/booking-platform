@@ -246,6 +246,43 @@ describe('Этап 2: SaaS-основа — авторизация, органи
       expect(restore.body.status).toBe('active');
     });
 
+    it('восстановление доступа (§3.4): временный пароль, смена при входе, отзыв сессий, снятие блокировки входа, аудит', async () => {
+      const { orgId, owner, ownerEmail } = await createOrgWithOwner(ctx, admin);
+      const user = await ctx.prisma.user.findUniqueOrThrow({ where: { email: ownerEmail } });
+      // владелец «забыл пароль» и заблокировал вход неудачными попытками
+      await ctx.prisma.user.update({ where: { id: user.id }, data: { failedLoginCount: 4, lockedUntil: new Date(Date.now() + 15 * 60_000) } });
+      const url = `${API}/admin/users/${user.id}/reset-password`;
+      const body = { temporaryPassword: 'TempReset12345', reason: 'Обращение владельца по телефону' };
+
+      const saved = admin.mfaCode;
+      admin.mfaCode = undefined;
+      expect((await admin.post(url, body)).body.error.code).toBe('MFA_REQUIRED');
+      admin.mfaCode = saved;
+      expect((await admin.post(url, { ...body, temporaryPassword: 'short' })).status).toBe(400);
+      // владелец организации не может восстанавливать доступ через админ-API (маршрут для него не существует)
+      expect((await owner.post(url, body)).status).toBe(404);
+      expect((await admin.post(url, body)).status).toBe(204);
+
+      // старая сессия отозвана, старый пароль не подходит, временный — требует смены
+      expect((await owner.get(`${API}/auth/me`)).status).toBe(401);
+      expect((await new Http(ctx.app).post(`${API}/auth/staff/login`, { email: ownerEmail, password: 'OwnerPass123!X1' })).status).toBe(401);
+      const fresh = new Http(ctx.app);
+      const login = await fresh.post(`${API}/auth/staff/login`, { email: ownerEmail, password: 'TempReset12345' });
+      expect(login.status).toBe(200);
+      expect(login.body.user.mustChangePassword).toBe(true);
+      const pending = await fresh.get(`${API}/organizations/${orgId}`);
+      expect(pending.body.error.code).toBe('PASSWORD_CHANGE_REQUIRED');
+      expect((await fresh.post(`${API}/auth/staff/change-password`, { currentPassword: 'TempReset12345', newPassword: 'NewOwnerPass123' })).status).toBe(204);
+
+      const audit = await ctx.prisma.auditLog.findFirstOrThrow({ where: { action: 'user.password_reset', entityId: user.id } });
+      expect(JSON.stringify(audit)).not.toContain('TempReset12345');
+
+      // свой пароль — только через смену; у клиента пароля нет
+      expect((await admin.post(`${API}/admin/users/${(await ctx.prisma.user.findFirstOrThrow({ where: { isSuperadmin: true } })).id}/reset-password`, body)).status).toBe(400);
+      const client = await ctx.prisma.user.create({ data: { name: 'Клиент', phone: '+77019998877' } });
+      expect((await admin.post(`${API}/admin/users/${client.id}/reset-password`, body)).status).toBe(422);
+    });
+
     it('воркер пересчитывает статусы подписок и пишет переходы', async () => {
       const { orgId } = await createOrgWithOwner(ctx, admin);
       await ctx.prisma.subscription.update({ where: { organizationId: orgId }, data: { endsAt: new Date(Date.now() - 1000), graceDays: 0 } });

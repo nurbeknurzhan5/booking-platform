@@ -52,8 +52,8 @@ npm run dev:web      # http://localhost:3000
 ## Проверки
 
 ```bash
-npm test              # 134 unit + integration теста (нужна БД booking_test)
-npm run test:e2e      # 10 E2E (Playwright, десктоп + мобильный), при запущенных api/worker/web
+npm test              # 137 unit + integration тестов (нужна БД booking_test)
+npm run test:e2e      # 24 E2E (Playwright: ноутбук, монитор, планшет, телефон), при запущенных api/worker/web
 npm run lint
 npm run typecheck
 node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
@@ -70,7 +70,7 @@ node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | архитектура, изоляция, ядро бронирования, outbox |
 | [DECISIONS.md](docs/DECISIONS.md) | утверждённые и предложенные решения, что нужно от заказчика |
 | [ERD.md](docs/ERD.md) | модель данных, ограничения, индексы, правила удаления |
-| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 157 операций |
+| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 159 операций |
 | [SECURITY.md](docs/SECURITY.md) | меры безопасности и что проверить до запуска |
 | [ANALYTICS.md](docs/ANALYTICS.md) | правила подсчёта, атрибуция, боты, внутренние просмотры |
 | [TESTING.md](docs/TESTING.md) | тесты, конкурентные и нагрузочные результаты |

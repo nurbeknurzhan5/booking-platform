@@ -4,6 +4,7 @@ import { CommonModule } from '../common/common.module';
 import { AuthModule } from '../auth/auth.module';
 import { DomainModule } from '../domain.module';
 import { WorkerService } from './worker.service';
+import { RetentionService } from './retention.service';
 import { getConfig } from '../config/config';
 
 @Module({
@@ -13,6 +14,6 @@ import { getConfig } from '../config/config';
     AuthModule,
     DomainModule,
   ],
-  providers: [WorkerService],
+  providers: [WorkerService, RetentionService],
 })
 export class WorkerModule {}

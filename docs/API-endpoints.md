@@ -33,6 +33,7 @@
 | `GET` | `/api/v1/admin/stats` | Системная статистика платформы |  |  | суперадмин + MFA |
 | `GET` | `/api/v1/admin/users` |  | search |  | суперадмин + MFA |
 | `POST` | `/api/v1/admin/users/{id}/block` |  | id | да | суперадмин + MFA |
+| `POST` | `/api/v1/admin/users/{id}/reset-password` | Восстановить доступ сотруднику: временный пароль и смена при входе | id | да | суперадмин + MFA |
 | `POST` | `/api/v1/admin/users/{id}/unblock` |  | id | да | суперадмин + MFA |
 
 ## analytics
@@ -131,6 +132,7 @@
 | `DELETE` | `/api/v1/organizations/{orgId}/branches/{branchId}` | Архивировать филиал | branchId |  | сотрудник организации (RBAC) |
 | `GET` | `/api/v1/organizations/{orgId}/branches/{branchId}/booking-settings` | Правила бронирования филиала | branchId |  | сотрудник организации (RBAC) |
 | `PUT` | `/api/v1/organizations/{orgId}/branches/{branchId}/booking-settings` | Изменить правила бронирования (только владелец) | branchId | да | сотрудник организации (RBAC) |
+| `GET` | `/api/v1/organizations/{orgId}/integrations` | Состояние интеграций организации (без секретов) |  |  | сотрудник организации (RBAC) |
 | `GET` | `/api/v1/organizations/{orgId}/notification-settings` | Настройки уведомлений организации |  |  | сотрудник организации (RBAC) |
 | `PUT` | `/api/v1/organizations/{orgId}/notification-settings` | Изменить настройки уведомлений |  | да | сотрудник организации (RBAC) |
 | `GET` | `/api/v1/organizations/{orgId}/subscription` | Подписка организации (только чтение для владельца) |  |  | сотрудник организации (RBAC) |
