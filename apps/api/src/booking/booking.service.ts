@@ -43,6 +43,7 @@ const APPOINTMENT_INCLUDE = {
 } satisfies Prisma.AppointmentInclude;
 
 type AppointmentFull = Prisma.AppointmentGetPayload<{ include: typeof APPOINTMENT_INCLUDE }>;
+type SaleRow = Prisma.PromotionGetPayload<object>;
 
 interface PricedPlan {
   assignment: SlotAssignment;
@@ -178,8 +179,9 @@ export class BookingService {
     assignment: SlotAssignment,
     promo: { code?: string; clientId?: string | null; lock: boolean },
     now: Date,
+    preloadedSales?: SaleRow[],
   ): Promise<PricedPlan> {
-    const sales = await this.activeSales(db, ctx.branch.organizationId, ctx.branch.id, now);
+    const sales = preloadedSales ?? (await this.activeSales(db, ctx.branch.organizationId, ctx.branch.id, now));
     const priceItems = assignment.items.map((it) => {
       const svc = ctx.services.find((s) => s.id === it.serviceId)!;
       const basePrice = resolveServicePrice({
@@ -480,6 +482,10 @@ export class BookingService {
     const date = AvailabilityService.localDate(args.startAt, branch.timezone);
     const autoAssign = args.items.some((i) => !i.specialistId);
     const manageToken = randomToken(32);
+    const [base, sales] = await Promise.all([
+      this.availability.loadStatic(this.prisma, branch.id, date, args.items, { audience: 'public' }),
+      this.activeSales(this.prisma, branch.organizationId, branch.id, new Date()),
+    ]);
     const appointment = await this.withConflictRetry(
       () =>
         this.prisma.$transaction(async (tx) => {
@@ -488,11 +494,11 @@ export class BookingService {
           await this.lockBranch(tx, branch.id);
           await guard(tx);
           await this.releaseExpiredHolds(tx, { organizationId });
-          const ctx = await this.availability.loadContext(tx, branch.id, date, args.items, { audience: 'public' });
+          const ctx = await this.availability.withOccupancy(tx, base);
           const assignment = this.availability.assignmentAt(ctx, args.items, args.startAt, 'public');
           if (!assignment) throw AppError.slotUnavailable();
           await this.assertClientLimits(tx, client.id, ctx.settings, new Date(assignment.start), new Date(assignment.end), { skip: false });
-          const plan = await this.priceAssignment(tx, ctx, assignment, { clientId: client.id, lock: false }, new Date());
+          const plan = await this.priceAssignment(tx, ctx, assignment, { clientId: client.id, lock: false }, new Date(), sales);
           const appt = await tx.appointment.create({
             data: {
               organizationId,
@@ -550,24 +556,47 @@ export class BookingService {
     const startAt = new Date(input.startAt);
     const date = AvailabilityService.localDate(startAt, branch.timezone);
     const autoAssign = input.items.some((i) => !i.specialistId);
+    const organizationId = branch.organizationId;
+    // Каталог, расписания и акции — до транзакции и параллельно (см. AvailabilityService.loadStatic).
+    const [base, sales] = await Promise.all([
+      this.availability.loadStatic(this.prisma, branch.id, date, input.items, { audience: 'public' }),
+      this.activeSales(this.prisma, organizationId, branch.id, new Date()),
+    ]);
+    this.assertSpecialistsValid(base, input.items);
 
-    return this.withConflictRetry(
+    const created = await this.withConflictRetry(
       () =>
         this.prisma.$transaction(async (tx) => {
-          const organizationId = branch.organizationId;
           await this.lockClientKey(tx, organizationId, input.client.phone);
+          // Под блокировкой клиента, но до блокировки филиала: от слота не зависит.
+          const client = await this.findOrCreateClient(tx, organizationId, input.client.phone, input.client.name, input.locale);
+          const consents: Array<[string, boolean]> = [
+            ['personal_data', true],
+            ['notifications', input.consents.notifications],
+            ['whatsapp', input.consents.whatsapp],
+          ];
+          await tx.clientConsent.createMany({
+            data: consents.map(([consentType, granted]) => ({
+              organizationId,
+              clientId: client.id,
+              phone: input.client.phone,
+              consentType,
+              granted,
+              textVersion: CONSENT_TEXT_VERSION,
+              source: 'booking_form',
+              ip,
+            })),
+          });
+
+          // Под блокировкой филиала — только занятость, проверки и вставки.
           await this.lockBranch(tx, branch.id);
           await this.releaseExpiredHolds(tx, { organizationId });
-
-          const ctx = await this.availability.loadContext(tx, branch.id, date, input.items, { audience: 'public' });
-          this.assertSpecialistsValid(ctx, input.items);
+          const ctx = await this.availability.withOccupancy(tx, base);
           const assignment = this.availability.assignmentAt(ctx, input.items, startAt, 'public');
           if (!assignment) throw AppError.slotUnavailable();
-
-          const client = await this.findOrCreateClient(tx, organizationId, input.client.phone, input.client.name, input.locale);
           await this.assertClientLimits(tx, client.id, ctx.settings, new Date(assignment.start), new Date(assignment.end), { skip: false });
           const now = new Date();
-          const plan = await this.priceAssignment(tx, ctx, assignment, { code: input.promoCode, clientId: client.id, lock: true }, now);
+          const plan = await this.priceAssignment(tx, ctx, assignment, { code: input.promoCode, clientId: client.id, lock: true }, now, sales);
 
           const appointment = await tx.appointment.create({
             data: {
@@ -610,25 +639,9 @@ export class BookingService {
               data: { organizationId, promotionId: plan.promotionId, appointmentId: appointment.id, clientId: client.id, discountAmount: plan.promoDiscountTotal, status: 'reserved' },
             });
           }
-          const consents: Array<[string, boolean]> = [
-            ['personal_data', true],
-            ['notifications', input.consents.notifications],
-            ['whatsapp', input.consents.whatsapp],
-          ];
-          await tx.clientConsent.createMany({
-            data: consents.map(([consentType, granted]) => ({
-              organizationId,
-              clientId: client.id,
-              phone: input.client.phone,
-              consentType,
-              granted,
-              textVersion: CONSENT_TEXT_VERSION,
-              source: 'booking_form',
-              ip,
-            })),
-          });
 
-          const issued = await this.otp.issue(tx, { phone: input.client.phone, purpose: 'booking', appointmentId: appointment.id, ip });
+          // Новая запись: прежних кодов по ней нет, инвалидировать нечего.
+          const issued = await this.otp.issue(tx, { phone: input.client.phone, purpose: 'booking', appointmentId: appointment.id, ip, fresh: true });
           await this.notifications.enqueue(tx, {
             organizationId,
             type: 'otp',
@@ -641,18 +654,19 @@ export class BookingService {
             appointmentId: appointment.id,
             clientId: client.id,
           });
-
-          const full = await tx.appointment.findUniqueOrThrow({ where: { id: appointment.id }, include: APPOINTMENT_INCLUDE });
-          return {
-            appointmentId: appointment.id,
-            holdToken,
-            holdExpiresAt: hold.expiresAt.toISOString(),
-            otpExpiresAt: issued.expiresAt.toISOString(),
-            appointment: this.toView(full, ctx.settings),
-          };
+          return { appointmentId: appointment.id, holdToken, holdExpiresAt: hold.expiresAt, otpExpiresAt: issued.expiresAt };
         }),
       autoAssign,
     );
+    // Представление читается после фиксации — вне блокировки филиала.
+    const full = await this.prisma.appointment.findUniqueOrThrow({ where: { id: created.appointmentId }, include: APPOINTMENT_INCLUDE });
+    return {
+      appointmentId: created.appointmentId,
+      holdToken: created.holdToken,
+      holdExpiresAt: created.holdExpiresAt.toISOString(),
+      otpExpiresAt: created.otpExpiresAt.toISOString(),
+      appointment: this.toView(full, base.settings),
+    };
   }
 
   private async loadHold(appointmentId: string, holdToken: string) {
@@ -831,20 +845,24 @@ export class BookingService {
     const startAt = new Date(input.startAt);
     const date = AvailabilityService.localDate(startAt, branch.timezone);
     const autoAssign = input.items.some((i) => !i.specialistId);
+    const [base, sales] = await Promise.all([
+      this.availability.loadStatic(this.prisma, branch.id, date, input.items, { audience: 'staff' }),
+      this.activeSales(this.prisma, organizationId, branch.id, new Date()),
+    ]);
+    this.assertSpecialistsValid(base, input.items);
     return this.withConflictRetry(
       () =>
         this.prisma.$transaction(async (tx) => {
           await this.lockClientKey(tx, organizationId, input.client.phone);
+          const client = await this.findOrCreateClient(tx, organizationId, input.client.phone, input.client.name, 'ru');
           await this.lockBranch(tx, branch.id);
           await this.releaseExpiredHolds(tx, { organizationId });
-          const ctx = await this.availability.loadContext(tx, branch.id, date, input.items, { audience: 'staff' });
-          this.assertSpecialistsValid(ctx, input.items);
+          const ctx = await this.availability.withOccupancy(tx, base);
           const assignment = this.availability.assignmentAt(ctx, input.items, startAt, 'staff');
           if (!assignment) throw AppError.slotUnavailable();
-          const client = await this.findOrCreateClient(tx, organizationId, input.client.phone, input.client.name, 'ru');
           const skipLimits = input.overrideClientLimits && ctx.settings.adminCanOverrideClientLimits;
           await this.assertClientLimits(tx, client.id, ctx.settings, new Date(assignment.start), new Date(assignment.end), { skip: skipLimits });
-          const plan = await this.priceAssignment(tx, ctx, assignment, { code: input.promoCode, clientId: client.id, lock: true }, new Date());
+          const plan = await this.priceAssignment(tx, ctx, assignment, { code: input.promoCode, clientId: client.id, lock: true }, new Date(), sales);
           const manageToken = randomToken(32);
           const appt = await tx.appointment.create({
             data: {
@@ -927,6 +945,8 @@ export class BookingService {
     const date = AvailabilityService.localDate(startAt, existing.branch.timezone);
     const audience = who === 'client' ? 'public' : 'staff';
     const autoAssign = items.some((i) => !i.specialistId);
+    const base = await this.availability.loadStatic(this.prisma, existing.branchId, date, items, { audience: 'staff' });
+    this.assertSpecialistsValid(base, items);
 
     return this.withConflictRetry(
       () =>
@@ -935,8 +955,7 @@ export class BookingService {
           if (locked[0]?.status !== 'confirmed') throw AppError.unprocessable('INVALID_STATUS_TRANSITION', 'Запись больше не активна');
           await this.lockBranch(tx, existing.branchId);
           await this.releaseExpiredHolds(tx, { organizationId: existing.organizationId });
-          const ctx = await this.availability.loadContext(tx, existing.branchId, date, items, { audience: 'staff', excludeAppointmentId: appointmentId });
-          this.assertSpecialistsValid(ctx, items);
+          const ctx = await this.availability.withOccupancy(tx, base, appointmentId);
           const assignment = this.availability.assignmentAt(ctx, items, startAt, audience);
           if (!assignment) throw AppError.slotUnavailable();
           await this.assertClientLimits(tx, existing.clientId, ctx.settings, new Date(assignment.start), new Date(assignment.end), {

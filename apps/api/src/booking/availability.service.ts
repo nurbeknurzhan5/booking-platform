@@ -48,18 +48,33 @@ export interface LoadOptions {
 export class AvailabilityService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Полный контекст: настройки, каталог, расписания и занятость ресурсов. */
   async loadContext(db: Tx | PrismaService, branchId: string, date: string, items: RequestItem[], opts: LoadOptions): Promise<BookingContext> {
+    const base = await this.loadStatic(db, branchId, date, items, opts);
+    return this.withOccupancy(db, base, opts.excludeAppointmentId);
+  }
+
+  /**
+   * Статическая часть контекста: филиал, настройки, услуги, ресурсы, расписания (без занятости).
+   * Бронирование загружает её до блокировки филиала: эти данные меняются без этой блокировки,
+   * поэтому чтение до неё даёт такой же снимок, а время под блокировкой сокращается.
+   */
+  async loadStatic(db: Tx | PrismaService, branchId: string, date: string, items: RequestItem[], opts: Pick<LoadOptions, 'audience'>): Promise<BookingContext> {
+    // Вне транзакции — параллельно; внутри транзакции — последовательно (одно соединение).
+    const parallel = db === this.prisma;
     const branch = await db.branch.findFirst({ where: { id: branchId, archivedAt: null } });
     if (!branch) throw AppError.notFound('Филиал');
-    const settings =
-      (await db.bookingSettings.findUnique({ where: { branchId } })) ??
-      (await db.bookingSettings.create({ data: { branchId, organizationId: branch.organizationId } }));
 
     const serviceIds = [...new Set(items.map((i) => i.serviceId))];
-    const svcRows = await db.service.findMany({
-      where: { id: { in: serviceIds }, organizationId: branch.organizationId, archivedAt: null, isActive: true },
-      include: { requirements: true, branchServices: { where: { branchId, isActive: true } } },
-    });
+    const loadSettings = async () =>
+      (await db.bookingSettings.findUnique({ where: { branchId } })) ??
+      (await db.bookingSettings.upsert({ where: { branchId }, create: { branchId, organizationId: branch.organizationId }, update: {} }));
+    const loadServices = () =>
+      db.service.findMany({
+        where: { id: { in: serviceIds }, organizationId: branch.organizationId, archivedAt: null, isActive: true },
+        include: { requirements: true, branchServices: { where: { branchId, isActive: true } } },
+      });
+    const [settings, svcRows] = parallel ? await Promise.all([loadSettings(), loadServices()]) : [await loadSettings(), await loadServices()];
     const services: LoadedService[] = svcRows
       .filter((s) => s.branchServices.length > 0)
       .filter((s) => opts.audience === 'staff' || s.onlineBookingEnabled)
@@ -102,14 +117,12 @@ export class AvailabilityService {
     const midnight = DateTime.fromISO(date, { zone: branch.timezone }).startOf('day');
     if (!midnight.isValid) throw AppError.badRequest('VALIDATION_ERROR', 'Некорректная дата');
     const dateObj = new Date(`${date}T00:00:00.000Z`);
-    // Вне транзакции — параллельно; внутри транзакции — последовательно (одно соединение).
     const ownerFilter = { branchId, OR: [{ resourceId: null }, { resourceId: { in: resIds } }] };
     const q = [
       () => db.workingHours.findMany({ where: ownerFilter }),
       () => db.break.findMany({ where: ownerFilter }),
       () => db.scheduleException.findMany({ where: { ...ownerFilter, dateFrom: { lte: dateObj }, dateTo: { gte: dateObj } } }),
     ] as const;
-    const parallel = db === this.prisma;
     const [hours, breaks, exceptions] = parallel
       ? await Promise.all([q[0](), q[1](), q[2]()])
       : [await q[0](), await q[1](), await q[2]()];
@@ -129,33 +142,10 @@ export class AvailabilityService {
     });
     const branchWindows = dayWindows(srcFor(null), date, branch.timezone);
 
-    // Занятость: активные строки, кроме истёкших неосвобождённых резервов (они считаются свободными).
-    const from = midnight.minus({ days: 1 }).toJSDate();
-    const to = midnight.plus({ days: 2 }).toJSDate();
-    const busyRows = resIds.length
-      ? await db.$queryRaw<Array<{ resource_id: string; start_at: Date; end_at: Date }>>`
-          SELECT ar.resource_id, ar.start_at, ar.end_at
-          FROM appointment_resources ar
-          JOIN appointments a ON a.id = ar.appointment_id
-          LEFT JOIN booking_holds h ON h.appointment_id = a.id
-          WHERE ar.is_active
-            AND ar.resource_id = ANY(${resIds}::uuid[])
-            AND ar.start_at < ${to} AND ar.end_at > ${from}
-            AND NOT (a.status = 'pending_otp' AND h.released_at IS NULL AND h.expires_at <= now())
-            AND (${opts.excludeAppointmentId ?? null}::uuid IS NULL OR ar.appointment_id <> ${opts.excludeAppointmentId ?? null}::uuid)
-          ORDER BY ar.start_at`
-      : [];
-
-    const dayStart = midnight.toMillis();
-    const dayEnd = midnight.plus({ days: 1 }).toMillis();
     const specialistPrices = new Map<string, number | null>();
     const specialistNames = new Map<string, string>();
 
     const resources: EngineResource[] = resRows.map((r) => {
-      const busy = busyRows
-        .filter((b) => b.resource_id === r.id)
-        .map((b) => ({ start: b.start_at.getTime(), end: b.end_at.getTime() }));
-      const load = busy.reduce((sum, b) => sum + Math.max(0, Math.min(b.end, dayEnd) - Math.max(b.start, dayStart)) / 60_000, 0);
       const own = dayWindows(srcFor(r.id), date, branch.timezone, branchWindows);
       let serviceSet: Set<string>;
       if (r.type === 'specialist' && r.specialist) {
@@ -173,12 +163,44 @@ export class AvailabilityService {
         sortOrder: r.sortOrder,
         serviceIds: serviceSet,
         available: intersect(own, branchWindows),
-        busy,
-        loadMinutes: load,
+        busy: [],
+        loadMinutes: 0,
       };
     });
 
     return { branch, settings, services, resources, branchWindows, specialistPrices, specialistNames, date };
+  }
+
+  /**
+   * Занятость ресурсов на дату (±1 сутки): активные строки, кроме истёкших неосвобождённых резервов
+   * (они считаются свободными). Внутри бронирования вызывается под блокировкой филиала.
+   */
+  async withOccupancy(db: Tx | PrismaService, base: BookingContext, excludeAppointmentId?: string): Promise<BookingContext> {
+    const resIds = base.resources.map((r) => r.id);
+    const midnight = DateTime.fromISO(base.date, { zone: base.branch.timezone }).startOf('day');
+    const from = midnight.minus({ days: 1 }).toJSDate();
+    const to = midnight.plus({ days: 2 }).toJSDate();
+    const busyRows = resIds.length
+      ? await db.$queryRaw<Array<{ resource_id: string; start_at: Date; end_at: Date }>>`
+          SELECT ar.resource_id, ar.start_at, ar.end_at
+          FROM appointment_resources ar
+          JOIN appointments a ON a.id = ar.appointment_id
+          LEFT JOIN booking_holds h ON h.appointment_id = a.id
+          WHERE ar.is_active
+            AND ar.resource_id = ANY(${resIds}::uuid[])
+            AND ar.start_at < ${to} AND ar.end_at > ${from}
+            AND NOT (a.status = 'pending_otp' AND h.released_at IS NULL AND h.expires_at <= now())
+            AND (${excludeAppointmentId ?? null}::uuid IS NULL OR ar.appointment_id <> ${excludeAppointmentId ?? null}::uuid)
+          ORDER BY ar.start_at`
+      : [];
+    const dayStart = midnight.toMillis();
+    const dayEnd = midnight.plus({ days: 1 }).toMillis();
+    const resources = base.resources.map((r) => {
+      const busy = busyRows.filter((b) => b.resource_id === r.id).map((b) => ({ start: b.start_at.getTime(), end: b.end_at.getTime() }));
+      const loadMinutes = busy.reduce((sum, b) => sum + Math.max(0, Math.min(b.end, dayEnd) - Math.max(b.start, dayStart)) / 60_000, 0);
+      return { ...r, busy, loadMinutes };
+    });
+    return { ...base, resources };
   }
 
   engineSettings(ctx: BookingContext, audience: 'public' | 'staff', now = new Date()): EngineSettings {

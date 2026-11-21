@@ -50,19 +50,22 @@ export class OtpService {
   /** Создаёт новый код (предыдущие активные коды этого назначения аннулируются). Возвращает код для отправки. */
   async issue(
     tx: Tx,
-    args: { phone: string; purpose: OtpPurpose; appointmentId?: string | null; ip: string },
+    /** fresh: код для только что созданного объекта — прежних кодов по нему нет, инвалидация не нужна. */
+    args: { phone: string; purpose: OtpPurpose; appointmentId?: string | null; ip: string; fresh?: boolean },
   ): Promise<{ code: string; otpId: string; expiresAt: Date }> {
     const s = await this.settings.get();
-    await tx.otpCode.updateMany({
-      where: {
-        phone: args.phone,
-        purpose: args.purpose,
-        appointmentId: args.appointmentId ?? null,
-        consumedAt: null,
-        invalidatedAt: null,
-      },
-      data: { invalidatedAt: new Date() },
-    });
+    if (!(args.fresh && args.appointmentId)) {
+      await tx.otpCode.updateMany({
+        where: {
+          phone: args.phone,
+          purpose: args.purpose,
+          appointmentId: args.appointmentId ?? null,
+          consumedAt: null,
+          invalidatedAt: null,
+        },
+        data: { invalidatedAt: new Date() },
+      });
+    }
     const id = randomUUID();
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + s.otpTtlSeconds * 1000);

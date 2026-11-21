@@ -97,7 +97,8 @@ export class NotificationService {
    * Возвращает id сообщения или null (канал недоступен / дубль).
    */
   async enqueue(tx: Tx, args: EnqueueArgs): Promise<string | null> {
-    const orgSettings = await this.orgNotificationSettings(tx, args.organizationId);
+    // Для OTP настройки организации не влияют на канал — лишний запрос не нужен (OTP создаётся под блокировкой филиала).
+    const orgSettings = args.type === 'otp' ? DEFAULT_NOTIFICATION_SETTINGS : await this.orgNotificationSettings(tx, args.organizationId);
     if (args.type === 'appointment_reminder' && !orgSettings.reminderEnabled) return null;
     if (args.type === 'review_request' && !orgSettings.reviewRequestEnabled) return null;
     const consent = args.type === 'otp' ? { notifications: true, whatsapp: true } : await this.consentFor(tx, args.recipient, args.organizationId);
