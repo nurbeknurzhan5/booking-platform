@@ -116,9 +116,7 @@ test('владелец настраивает новый филиал с нул�
   await expect(cp.getByRole('heading', { level: 1 })).toContainText(branchName);
   await cp.getByTestId('book-button').first().click();
   await cp.getByText(serviceName).click();
-  await cp.getByTestId('next').click();
   await cp.getByRole('button', { name: new RegExp(masterName) }).click();
-  await cp.getByTestId('next').click();
   await cp.locator('[data-testid^="date-"]').nth(1).click();
   await cp.getByTestId('slot').first().click();
   await cp.getByTestId('next').click();

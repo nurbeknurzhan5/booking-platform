@@ -38,15 +38,16 @@ test('клиент записывается, переносит и отменя�
   await expect(page.getByText('Мужская стрижка').first()).toBeVisible();
   await noHorizontalScroll(page);
 
-  // 2. Кнопка записи → выбор услуги
+  // 2. Кнопка записи → одна страница: услуга, мастер, дата и время
   await page.getByTestId('book-button').first().click();
   await expect(page).toHaveURL(new RegExp(`/ru/b/${SLUG}/book`));
+  await expect(page.getByTestId('pick-service-first')).toBeVisible();
   await page.getByText('Мужская стрижка').click();
-  await page.getByTestId('next').click();
 
-  // 3. Специалист
+  // 3. Специалист — на той же странице; у карточки число свободных окон на выбранный день
+  await expect(page.getByTestId('spcount-any')).toBeVisible();
   await page.getByRole('button', { name: /Болат/ }).click();
-  await page.getByTestId('next').click();
+  await expect(page.getByRole('button', { name: /Болат/ })).toHaveAttribute('aria-pressed', 'true');
 
   // 4. Дата и время: завтра, первый свободный слот
   const dates = page.locator('[data-testid^="date-"]');
@@ -93,6 +94,27 @@ test('клиент записывается, переносит и отменя�
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('cancel').click();
   await expect(page.getByTestId('appointment-status')).toHaveText('Отменена вами');
+});
+
+test('запись на одной странице: мастер сужает услуги, услуга — мастеров, у дней и мастеров видно число окон', async ({ page }) => {
+  await page.goto(`/ru/b/${SLUG}/book`);
+  // сначала мастер: остаются только его услуги, остальные — по кнопке «Все услуги»
+  await page.getByRole('button', { name: /Дина/ }).click();
+  await expect(page.getByText('Классический массаж')).toBeVisible();
+  await expect(page.getByText('Мужская стрижка')).toHaveCount(0);
+  await page.getByRole('button', { name: /Все услуги/ }).click();
+  await expect(page.getByText('Мужская стрижка')).toBeVisible();
+  // услуга: мастера, которые её не делают, пропадают; у оставшихся — окна на выбранный день
+  await page.getByRole('button', { name: /Любой свободный/ }).click();
+  await page.getByText('Мужская стрижка').click();
+  await expect(page.getByRole('button', { name: /Дина/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Болат/ })).toBeVisible();
+  await expect(page.getByTestId('spcount-any')).toBeVisible();
+  await expect(page.getByTestId('pick-service-first')).toHaveCount(0);
+  // итог справа (или снизу на телефоне) и кнопка «Далее» до выбора времени неактивна
+  await expect(page.getByTestId('booking-summary')).toBeVisible();
+  await expect(page.getByTestId('next')).toBeDisabled();
+  await noHorizontalScroll(page);
 });
 
 test('публичная страница доступна на трёх языках с постоянной ссылкой', async ({ page }) => {

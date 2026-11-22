@@ -69,6 +69,53 @@ describe('Этап 4: онлайн-запись', () => {
     });
   });
 
+  describe('запись на одной странице: обзор доступности', () => {
+    const overview = (items: Array<{ serviceId: string; specialistId?: string | null }>, d = date) =>
+      new Http(ctx.app).post(`${API}/public/branches/${b.slug}/availability/overview`, { date: d, items });
+
+    it('слоты на дату, окна по 14 дням и по каждому мастеру выбранной услуги', async () => {
+      const r = await overview([{ serviceId: b.services.haircut }]);
+      expect(r.status).toBe(200);
+      expect(r.body.slots).toHaveLength(19);
+      expect(r.body.days).toHaveLength(14);
+      expect(r.body.days.find((x: { date: string }) => x.date === date).count).toBe(19);
+      // стрижку делают Анна и Болат; массажисты в списке не появляются
+      const ids = r.body.specialists.map((x: { id: string }) => x.id).sort();
+      expect(ids).toEqual([b.specialists.anna, b.specialists.bolat].sort());
+      expect(r.body.specialists.every((x: { count: number }) => x.count === 19)).toBe(true);
+    });
+
+    it('выходной мастера: у него 0 окон в этот день, у «любого» время остаётся; при выбранном мастере день пустой', async () => {
+      const annaRes = (await ctx.prisma.specialist.findUniqueOrThrow({ where: { id: b.specialists.anna } })).resourceId;
+      const ex = await b.owner.post(`${API}/organizations/${b.orgId}/branches/${b.branchId}/schedule/exceptions`, { resourceId: annaRes, dateFrom: date, dateTo: date, kind: 'closed', reason: 'Выходной' });
+      expect(ex.status).toBe(201);
+      const any = await overview([{ serviceId: b.services.haircut }]);
+      expect(any.body.slots).toHaveLength(19);
+      const count = (id: string) => any.body.specialists.find((x: { id: string }) => x.id === id).count;
+      expect(count(b.specialists.anna)).toBe(0);
+      expect(count(b.specialists.bolat)).toBe(19);
+      const withAnna = await overview([{ serviceId: b.services.haircut, specialistId: b.specialists.anna }]);
+      expect(withAnna.body.slots).toHaveLength(0);
+      expect(withAnna.body.days.find((x: { date: string }) => x.date === date).count).toBe(0);
+      // в другие дни Анна работает — клиенту есть куда перейти
+      expect(withAnna.body.days.some((x: { count: number }) => x.count > 0)).toBe(true);
+    });
+
+    it('несколько услуг: мастер указан для своих услуг, по остальным подбирается свободный', async () => {
+      const r = await overview([{ serviceId: b.services.haircut }, { serviceId: b.services.massage }]);
+      expect(r.status).toBe(200);
+      const bolat = r.body.specialists.find((x: { id: string }) => x.id === b.specialists.bolat);
+      expect(bolat.serviceIds).toEqual([b.services.haircut]);
+      expect(bolat.count).toBeGreaterThan(0);
+      expect(r.body.specialists.map((x: { id: string }) => x.id)).toContain(b.specialists.ivan);
+    });
+
+    it('проверяет дату и мастера так же, как обычный поиск слотов', async () => {
+      expect((await overview([{ serviceId: b.services.haircut }], '2020-01-01')).status).toBe(400);
+      expect((await overview([{ serviceId: b.services.massage, specialistId: b.specialists.anna }])).status).toBe(400);
+    });
+  });
+
   describe('полный сценарий клиента (§8.1)', () => {
     it('резерв → OTP → подтверждение; snapshot цены; уведомление; ссылка управления', async () => {
       const { hold, confirm, phone } = await bookAndConfirm(ctx, b.slug, {

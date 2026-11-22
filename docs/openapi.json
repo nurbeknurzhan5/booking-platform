@@ -2159,6 +2159,41 @@
         ]
       }
     },
+    "/api/v1/public/branches/{slug}/availability/overview": {
+      "post": {
+        "operationId": "PublicBookingController_availabilityOverview",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Запись на одной странице: слоты на дату, число окон по 14 дням и по каждому специалисту",
+        "tags": [
+          "availability",
+          "appointments"
+        ]
+      }
+    },
     "/api/v1/public/branches/{slug}/quote": {
       "post": {
         "operationId": "PublicBookingController_quote",
@@ -7747,8 +7782,61 @@
                   "classic",
                   "modern",
                   "minimal",
-                  "bold"
+                  "bold",
+                  "neon",
+                  "warm",
+                  "luxe",
+                  "fresh"
                 ]
+              },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "font": {
+                    "type": "string",
+                    "enum": [
+                      "sans",
+                      "serif",
+                      "display",
+                      "mono"
+                    ]
+                  },
+                  "hero": {
+                    "type": "string",
+                    "enum": [
+                      "cover",
+                      "split",
+                      "centered",
+                      "minimal"
+                    ]
+                  },
+                  "cards": {
+                    "type": "string",
+                    "enum": [
+                      "shadow",
+                      "outline",
+                      "flat",
+                      "glass"
+                    ]
+                  },
+                  "radius": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "md",
+                      "xl",
+                      "2xl"
+                    ]
+                  }
+                }
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]{2,40}$"
+                }
               },
               "sectionOrder": {
                 "minItems": 1,
@@ -7867,8 +7955,61 @@
                   "classic",
                   "modern",
                   "minimal",
-                  "bold"
+                  "bold",
+                  "neon",
+                  "warm",
+                  "luxe",
+                  "fresh"
                 ]
+              },
+              "style": {
+                "type": "object",
+                "properties": {
+                  "font": {
+                    "type": "string",
+                    "enum": [
+                      "sans",
+                      "serif",
+                      "display",
+                      "mono"
+                    ]
+                  },
+                  "hero": {
+                    "type": "string",
+                    "enum": [
+                      "cover",
+                      "split",
+                      "centered",
+                      "minimal"
+                    ]
+                  },
+                  "cards": {
+                    "type": "string",
+                    "enum": [
+                      "shadow",
+                      "outline",
+                      "flat",
+                      "glass"
+                    ]
+                  },
+                  "radius": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "md",
+                      "xl",
+                      "2xl"
+                    ]
+                  }
+                }
+              },
+              "tags": {
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]{2,40}$"
+                }
               },
               "sectionOrder": {
                 "minItems": 1,

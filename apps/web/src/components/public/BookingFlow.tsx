@@ -2,15 +2,15 @@
 
 import { themeRoot } from '@/lib/theme';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppointmentView, PublicPageData, SlotsResponse } from '@/lib/types';
 import { api, ApiError, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { dateTime, minutesLabel, money } from '@/lib/format';
 import { analyticsSession, savedUtm, track } from '@/lib/analytics';
-import { SlotPicker } from './SlotPicker';
+import { BookingSelect, type Quote } from './BookingSelect';
 
-type Step = 'services' | 'specialists' | 'time' | 'details' | 'otp' | 'done' | 'waitlist' | 'waitlistOtp' | 'waitlistDone';
+type Step = 'select' | 'details' | 'otp' | 'done' | 'waitlist' | 'waitlistOtp' | 'waitlistDone';
 type Slot = SlotsResponse['slots'][number];
 
 interface HoldResponse {
@@ -29,13 +29,6 @@ interface WaitlistJoin {
 function localISODate(timezone: string, days = 0): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(Date.now() + days * 86400_000));
 }
-interface Quote {
-  durationMinutes: number;
-  baseTotal: number;
-  saleDiscountTotal: number;
-  promoDiscountTotal: number;
-  totalPrice: number;
-}
 
 function useCountdown(until: string | null) {
   const [left, setLeft] = useState(0);
@@ -49,16 +42,16 @@ function useCountdown(until: string | null) {
   return left;
 }
 
-export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; initialServiceId?: string }) {
+export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { data: PublicPageData; initialServiceId?: string; initialSpecialistId?: string }) {
   const lang = data.locale;
   const t = (k: PublicKey) => pt(lang, k);
   const { style, className: themeClass } = themeRoot(data.template);
-  const bookable = data.services.filter((s) => s.onlineBooking);
 
-  const [step, setStep] = useState<Step>('services');
+  const [step, setStep] = useState<Step>('select');
   const [selected, setSelected] = useState<string[]>(initialServiceId ? [initialServiceId] : []);
-  const [specialistFor, setSpecialistFor] = useState<Record<string, string | null>>({});
+  const [specialist, setSpecialist] = useState<string | null>(initialSpecialistId ?? null);
   const [slot, setSlot] = useState<Slot | null>(null);
+  const [date, setDate] = useState<string | null>(null);
   const [reloadSlots, setReloadSlots] = useState(0);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -89,7 +82,11 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
     track(data.slug, 'booking_started');
   }, [data.slug]);
 
-  const items = useMemo(() => selected.map((serviceId) => ({ serviceId, specialistId: specialistFor[serviceId] ?? null })), [selected, specialistFor]);
+  // выбранный мастер — для услуг, которые он оказывает; остальные услуги — «любой свободный»
+  const items = useMemo(
+    () => selected.map((serviceId) => ({ serviceId, specialistId: specialist && data.specialists.some((x) => x.id === specialist && x.serviceIds.includes(serviceId)) ? specialist : null })),
+    [selected, specialist, data.specialists],
+  );
 
   useEffect(() => {
     if (!items.length) return setQuote(null);
@@ -103,13 +100,6 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
       });
   }, [items, appliedPromo, data.slug]);
 
-  const fetchSlots = useCallback(
-    (date: string) => api<SlotsResponse>(`/public/branches/${data.slug}/availability`, { method: 'POST', body: { date, items } }),
-    [data.slug, items],
-  );
-
-  const specialistsFor = (serviceId: string) => data.specialists.filter((s) => s.serviceIds.includes(serviceId));
-  const needsSpecialistStep = selected.some((id) => specialistsFor(id).length > 0);
 
   async function submitHold() {
     setError(null);
@@ -139,7 +129,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
       if (e instanceof ApiError && e.code === 'SLOT_UNAVAILABLE') {
         setSlot(null);
         setReloadSlots((n) => n + 1);
-        setStep('time');
+        setStep('select');
       }
       setError(errorMessage(e));
     } finally {
@@ -164,7 +154,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
         setHold(null);
         setSlot(null);
         setReloadSlots((n) => n + 1);
-        setStep('time');
+        setStep('select');
       }
       setError(errorMessage(e));
     } finally {
@@ -258,9 +248,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
   }
 
   const steps: Array<{ key: Step; label: PublicKey }> = [
-    { key: 'services', label: 'step1' },
-    ...(needsSpecialistStep ? [{ key: 'specialists' as Step, label: 'step2' as PublicKey }] : []),
-    { key: 'time', label: 'step3' },
+    { key: 'select', label: 'step3' },
     { key: 'details', label: 'step4' },
     { key: 'otp', label: 'step5' },
   ];
@@ -291,7 +279,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
 
   return (
     <div className={`${themeClass} min-h-screen`} style={style}>
-      <div className="mx-auto max-w-xl px-4 pb-10 pt-4">
+      <div className={`mx-auto px-4 pb-10 pt-4 ${step === 'select' ? 'max-w-5xl' : 'max-w-xl'}`}>
         <div className="mb-4 flex items-center justify-between">
           <Link href={`/${lang}/b/${data.slug}`} className="tpl-primary text-sm">← {data.branch.name}</Link>
         </div>
@@ -304,98 +292,32 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
         )}
         {error && <div role="alert" className="mb-4 rounded-lg bg-rose-100 px-3 py-2 text-sm text-rose-800">{error}</div>}
 
-        {step === 'services' && (
-          <section>
-            <h1 className="mb-4 text-xl font-semibold">{t('step1')}</h1>
-            <ul className="space-y-2">
-              {bookable.map((s) => {
-                const on = selected.includes(s.id);
-                return (
-                  <li key={s.id}>
-                    <label className={`tpl-surface flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${on ? 'border-[var(--tpl-primary)]' : 'tpl-border'}`}>
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => setSelected(on ? selected.filter((x) => x !== s.id) : [...selected, s.id])}
-                        className="h-5 w-5 accent-[var(--tpl-primary)]"
-                        data-testid={`service-${s.id}`}
-                      />
-                      <span className="flex-1">
-                        <span className="block font-medium">{s.name}</span>
-                        <span className="tpl-muted text-xs">{minutesLabel(s.durationMinutes, lang)}</span>
-                      </span>
-                      <span className="font-semibold">{money(s.price)}</span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-            <Summary />
-            <button disabled={!selected.length} onClick={() => setStep(needsSpecialistStep ? 'specialists' : 'time')} className="tpl-btn mt-4 w-full rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="next">
-              {t('next')}
-            </button>
-          </section>
-        )}
-
-        {step === 'specialists' && (
-          <section>
-            <h1 className="mb-4 text-xl font-semibold">{t('step2')}</h1>
-            {selected.map((sid) => {
-              const svc = data.services.find((s) => s.id === sid)!;
-              const list = specialistsFor(sid);
-              if (!list.length) return null;
-              return (
-                <div key={sid} className="mb-5">
-                  <h2 className="tpl-muted mb-2 text-sm font-medium">{svc.name}</h2>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ id: null as string | null, name: t('anySpecialist'), specialization: null as string | null }, ...list].map((sp) => {
-                      const on = (specialistFor[sid] ?? null) === sp.id;
-                      return (
-                        <button
-                          key={sp.id ?? 'any'}
-                          type="button"
-                          onClick={() => setSpecialistFor({ ...specialistFor, [sid]: sp.id })}
-                          data-testid={`specialist-${sp.id ?? 'any'}`}
-                          className={`rounded-xl border p-3 text-left text-sm ${on ? 'tpl-btn border-transparent' : 'tpl-surface tpl-border'}`}
-                        >
-                          <span className="block font-medium">{sp.name}</span>
-                          {sp.specialization && <span className="text-xs opacity-75">{sp.specialization}</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-            <Summary />
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => setStep('services')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
-              <button onClick={() => { setSlot(null); setStep('time'); }} className="tpl-btn flex-1 rounded-xl py-3 font-semibold" data-testid="next">{t('next')}</button>
-            </div>
-          </section>
-        )}
-
-        {step === 'time' && (
-          <section>
-            <h1 className="mb-4 text-xl font-semibold">{t('step3')}</h1>
-            <SlotPicker lang={lang} timezone={data.branch.timezone} fetchSlots={fetchSlots} onSelect={setSlot} selected={slot?.startAt} reloadToken={reloadSlots} />
-            {slot && (
-              <p className="tpl-muted mt-4 text-sm">
-                {dateTime(slot.startAt, data.branch.timezone, lang)}
-                {slot.items.some((i) => i.specialistName) && ` · ${[...new Set(slot.items.map((i) => i.specialistName).filter(Boolean))].join(', ')}`}
-              </p>
-            )}
-            {data.availability.waitlistEnabled && (
-              <button type="button" onClick={() => { setError(null); setStep('waitlist'); }} className="tpl-primary mt-4 block text-sm underline" data-testid="waitlist-open">
-                {t('waitlistJoin')}
-              </button>
-            )}
-            <Summary />
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => setStep(needsSpecialistStep ? 'specialists' : 'services')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
-              <button disabled={!slot} onClick={() => setStep('details')} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="next">{t('next')}</button>
-            </div>
-          </section>
+        {step === 'select' && (
+          <BookingSelect
+            data={data}
+            selected={selected}
+            onSelectedChange={setSelected}
+            specialist={specialist}
+            onSpecialistChange={setSpecialist}
+            slot={slot}
+            onSlotChange={setSlot}
+            date={date}
+            onDateChange={setDate}
+            reloadToken={reloadSlots}
+            quote={quote}
+            onContinue={() => {
+              setError(null);
+              setStep('details');
+            }}
+            onWaitlist={
+              data.availability.waitlistEnabled
+                ? () => {
+                    setError(null);
+                    setStep('waitlist');
+                  }
+                : undefined
+            }
+          />
         )}
 
         {step === 'waitlist' && (
@@ -410,7 +332,8 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
             <div className="tpl-surface tpl-border mb-4 rounded-xl border p-3 text-sm">
               {selected.map((sid) => {
                 const svc = data.services.find((s) => s.id === sid);
-                const sp = specialistFor[sid] ? data.specialists.find((x) => x.id === specialistFor[sid]) : null;
+                const spId = items.find((i) => i.serviceId === sid)?.specialistId;
+                const sp = spId ? data.specialists.find((x) => x.id === spId) : null;
                 return <div key={sid}>{svc?.name}{sp ? ` · ${sp.name}` : ''}</div>;
               })}
             </div>
@@ -448,7 +371,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
               </label>
             </div>
             <div className="mt-4 flex gap-2">
-              <button type="button" onClick={() => setStep('time')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
+              <button type="button" onClick={() => setStep('select')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
               <button type="submit" disabled={busy || !consentPd || !selected.length} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="wl-get-code">{t('getCode')}</button>
             </div>
           </form>
@@ -544,7 +467,7 @@ export function BookingFlow({ data, initialServiceId }: { data: PublicPageData; 
             </div>
             <Summary />
             <div className="mt-4 flex gap-2">
-              <button type="button" onClick={() => setStep('time')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
+              <button type="button" onClick={() => setStep('select')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
               <button type="submit" disabled={busy || !consentPd} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="get-code">{t('getCode')}</button>
             </div>
           </form>

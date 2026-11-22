@@ -81,3 +81,21 @@ export function minutesLabel(m: number, lang: string = 'ru'): string {
   const M = lang === 'en' ? 'min' : 'мин';
   return [h ? `${h} ${H}` : '', mm ? `${mm} ${M}` : ''].filter(Boolean).join(' ') || `0 ${M}`;
 }
+
+const WEEKDAYS_SHORT: Record<string, readonly string[]> = {
+  ru: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'],
+  kk: ['дс', 'сс', 'ср', 'бс', 'жм', 'сб', 'жк'],
+  en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+};
+const MONTHS_SHORT: Record<string, readonly string[]> = {
+  ru: ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'],
+  kk: ['қаң', 'ақп', 'нау', 'сәу', 'мам', 'мау', 'шіл', 'там', 'қыр', 'қаз', 'қар', 'жел'],
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+};
+
+/** Части даты YYYY-MM-DD для ленты дат: короткий день недели, число, месяц — без Intl (одинаково на сервере и в браузере). */
+export function dayParts(isoDate: string, lang: string = 'ru'): { weekday: string; day: number; month: string } {
+  const d = new Date(`${isoDate}T12:00:00Z`);
+  const wd = (d.getUTCDay() + 6) % 7;
+  return { weekday: (WEEKDAYS_SHORT[lang] ?? WEEKDAYS_SHORT.ru)[wd]!, day: d.getUTCDate(), month: (MONTHS_SHORT[lang] ?? MONTHS_SHORT.ru)[d.getUTCMonth()]! };
+}

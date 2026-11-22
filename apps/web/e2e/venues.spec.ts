@@ -26,8 +26,8 @@ test('компьютерный клуб: места и тарифы на стр�
   await page.getByTestId('book-button').first().click();
   await expect(page).toHaveURL(/\/ru\/b\/demo-club\/book/);
   await page.getByText('ПК VIP · 1 час', { exact: true }).click();
-  await page.getByTestId('next').click();
-  // мастера нет — сразу выбор времени
+  // мастеров у клуба нет — блока выбора специалиста на странице нет, сразу дата и время
+  await expect(page.getByTestId('specialists-row')).toHaveCount(0);
   await page.locator('[data-testid^="date-"]').nth(1).click();
   await page.getByTestId('slot').first().click();
   await page.getByTestId('next').click();

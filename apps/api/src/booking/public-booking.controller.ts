@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Req, Res } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
+import { DateTime } from 'luxon';
 import type { Request, Response } from 'express';
 import {
   AvailabilitySearchSchema,
@@ -52,6 +53,18 @@ export class PublicBookingController {
     assertDateRange(body.date);
     const branch = await this.booking.assertPublicBookingAllowed(slug);
     return this.booking.searchSlots(branch.id, body.date, body.items, 'public');
+  }
+
+  @Post('branches/:slug/availability/overview')
+  @HttpCode(200)
+  @RateLimit({ name: 'pub-availability-overview', limit: 60, windowSec: 60, by: 'ip' })
+  @ApiOperation({ summary: 'Запись на одной странице: слоты на дату, число окон по 14 дням и по каждому специалисту' })
+  async availabilityOverview(@Param('slug') slug: string, @Body() body: SearchDto) {
+    assertDateRange(body.date);
+    const branch = await this.booking.assertPublicBookingAllowed(slug);
+    const today = DateTime.now().setZone(branch.timezone).startOf('day');
+    const days = Array.from({ length: 14 }, (_, i) => today.plus({ days: i }).toISODate()!);
+    return this.booking.searchOverview(branch.id, body.date, body.items, days, 'public');
   }
 
   @Post('branches/:slug/quote')

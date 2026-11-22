@@ -57,9 +57,7 @@ test('лист ожидания: очередь → освобождение в�
   const waiter = uniquePhone('+7707');
   await page.goto(`/ru/b/${SLUG}/book`);
   await page.getByText('Мужская стрижка').click();
-  await page.getByTestId('next').click();
   await page.getByRole('button', { name: /Болат/ }).click();
-  await page.getByTestId('next').click();
   await page.getByTestId('waitlist-open').click();
   await page.getByTestId('wl-from').fill(day);
   await page.getByTestId('wl-to').fill(day);

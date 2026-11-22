@@ -270,7 +270,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
         <Section key="specialists" id="specialists" title={t('specialists')}>
           <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {data.specialists.map((s) => (
-              <li key={s.id} className="tpl-card p-5 text-center">
+              <li key={s.id} className="tpl-card flex flex-col items-center p-5 text-center">
                 {s.photo ? (
                   <img src={s.photo.medium} alt="" loading="lazy" className="mx-auto mb-3 h-24 w-24 rounded-full object-cover shadow-md" />
                 ) : (
@@ -281,6 +281,11 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
                 <div className="font-semibold">{s.name}</div>
                 {s.specialization && <div className="tpl-muted text-sm">{s.specialization}</div>}
                 {s.description && <p className="tpl-muted mt-2 line-clamp-3 text-xs">{s.description}</p>}
+                {data.availability.bookingEnabled && (
+                  <Link href={preview ? '#' : `${bookHref}?specialist=${s.id}`} onClick={onBookClick} className="tpl-chip tpl-pill mt-3 inline-block whitespace-nowrap px-3 py-1 text-xs font-semibold" data-testid="book-specialist">
+                    {t('bookThis')}
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

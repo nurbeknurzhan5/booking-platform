@@ -147,6 +147,36 @@ export class BookingService {
     };
   }
 
+  /**
+   * Запись на одной странице: свободное время на выбранную дату, число окон по дням (лента дат)
+   * и число окон у каждого специалиста на выбранную дату — чтобы выбор услуги, специалиста и даты
+   * сразу перестраивал остальное. Специалист, выбранный клиентом, применяется к тем услугам, которые он оказывает.
+   */
+  async searchOverview(branchId: string, date: string, items: RequestItem[], days: string[], audience: 'public' | 'staff') {
+    const countFor = async (d: string) => {
+      const ctx = await this.availability.loadContext(this.prisma, branchId, d, items, { audience });
+      return { ctx, count: this.availability.slots(ctx, items, audience).length };
+    };
+    // контекст выбранной даты — для слотов и специалистов; дни считаются пачками, чтобы не занимать весь пул соединений
+    const main = await this.searchSlots(branchId, date, items, audience);
+    const dayCounts: Array<{ date: string; count: number }> = [];
+    for (let i = 0; i < days.length; i += 4) {
+      const chunk = days.slice(i, i + 4);
+      const res = await Promise.all(chunk.map((d) => (d === date ? Promise.resolve(null) : countFor(d))));
+      chunk.forEach((d, k) => dayCounts.push({ date: d, count: d === date ? main.slots.length : res[k]!.count }));
+    }
+    const ctx = await this.availability.loadContext(this.prisma, branchId, date, items, { audience });
+    const specialists: Array<{ id: string; count: number; serviceIds: string[] }> = [];
+    for (const r of ctx.resources) {
+      if (!r.specialistId) continue;
+      const own = items.filter((it) => r.serviceIds.has(it.serviceId)).map((it) => it.serviceId);
+      if (!own.length) continue;
+      const withSp = items.map((it) => (r.serviceIds.has(it.serviceId) ? { ...it, specialistId: r.specialistId } : { ...it, specialistId: null }));
+      specialists.push({ id: r.specialistId, count: this.availability.slots(ctx, withSp, audience).length, serviceIds: own });
+    }
+    return { ...main, days: dayCounts, specialists };
+  }
+
   assertSpecialistsValid(ctx: BookingContext, items: RequestItem[]) {
     for (const it of items) {
       if (it.specialistId && !ctx.resources.some((r) => r.specialistId === it.specialistId && r.serviceIds.has(it.serviceId))) {

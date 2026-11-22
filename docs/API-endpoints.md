@@ -77,6 +77,7 @@
 | `POST` | `/api/v1/public/bookings/{id}/extend` | Продлить резерв (если разрешено владельцем) | id | да | публичный |
 | `POST` | `/api/v1/public/bookings/{id}/resend-otp` | Повторно отправить OTP (с ограничением частоты) | id | да | публичный |
 | `POST` | `/api/v1/public/branches/{slug}/availability` | Свободные слоты на дату для набора услуг (специалист или автоподбор) | slug | да | публичный |
+| `POST` | `/api/v1/public/branches/{slug}/availability/overview` | Запись на одной странице: слоты на дату, число окон по 14 дням и по каждому специалисту | slug | да | публичный |
 | `POST` | `/api/v1/public/branches/{slug}/bookings` | Создать временный резерв и отправить OTP (атомарно, без двойного бронирования) | slug | да | публичный |
 | `POST` | `/api/v1/public/branches/{slug}/quote` | Предварительный расчёт стоимости и длительности (промокод проверяется на сервере) | slug | да | публичный |
 | `GET` | `/api/v1/public/manage/{token}` | Запись по ссылке управления | token |  | публичный |
