@@ -7,7 +7,7 @@ import { Actor, ClientAccess, CurrentUser, RateLimit } from '../common/decorator
 import type { ActorContext, AuthUser } from '../common/request-context';
 import { PrismaService } from '../common/prisma.service';
 import { AppError } from '../common/errors';
-import { BookingService } from '../booking/booking.service';
+import { APPOINTMENT_INCLUDE, BookingService } from '../booking/booking.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { IdempotencyService } from '../common/idempotency.service';
 import type { Prisma } from '../generated/prisma/client';
@@ -55,13 +55,7 @@ export class MeController {
       where: { client: this.clientWhere(user), ...where },
       orderBy: { startAt: scope === 'upcoming' ? 'asc' : 'desc' },
       take: 100,
-      include: {
-        items: { orderBy: { position: 'asc' } },
-        branch: { select: { id: true, name: true, slug: true, address: true, phone: true, timezone: true, organizationId: true } },
-        client: { select: { id: true, name: true, phone: true } },
-        hold: { select: { expiresAt: true, releasedAt: true, extensionCount: true } },
-        review: { select: { id: true, rating: true } },
-      },
+      include: APPOINTMENT_INCLUDE,
     });
     const settings = await this.prisma.bookingSettings.findMany({ where: { branchId: { in: [...new Set(rows.map((r) => r.branchId))] } } });
     return rows.map((r) => this.booking.toView(r, settings.find((s) => s.branchId === r.branchId)!));

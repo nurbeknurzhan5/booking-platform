@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { OWNER_STATE } from './global-setup';
 import { csrfHeader, ownerOrgId } from './owner';
@@ -83,13 +84,20 @@ test('лист ожидания: очередь → освобождение в�
   expect(avRes.status(), await avRes.text()).toBe(200);
   const slots = (await avRes.json()) as { slots: Array<{ startAt: string }> };
   const startAt = slots.slots[Math.floor(slots.slots.length / 2)]!.startAt;
+  // Запись другого клиента создаёт и отменяет администратор: публичные резервы с одного IP ограничены (15 за 10 мин),
+  // а для листа ожидания важно только освобождение времени.
+  const owner = await playwright.request.newContext({ baseURL, storageState: OWNER_STATE });
+  const csrf = (JSON.parse(readFileSync(OWNER_STATE, 'utf-8')) as { cookies: Array<{ name: string; value: string }> }).cookies.find((c) => c.name === 'bk_csrf')!.value;
   const other = uniquePhone('+7708');
-  const hold = await request.post(`${API}/public/branches/${SLUG}/bookings`, { data: { startAt, items, client: { name: 'Отменяющий', phone: other }, consents: { personalData: true } } });
-  expect(hold.status()).toBe(201);
-  const h = (await hold.json()) as { appointmentId: string; holdToken: string };
-  const code = /(\d{6})/.exec(await inbox(request, other, 'otp'))![1]!;
-  const confirmed = (await (await request.post(`${API}/public/bookings/${h.appointmentId}/confirm`, { data: { holdToken: h.holdToken, code } })).json()) as { manageToken: string };
-  expect((await request.post(`${API}/public/manage/${confirmed.manageToken}/cancel`, { data: {} })).status()).toBe(200);
+  const manual = await owner.post(`${API}/organizations/${orgId}/appointments`, {
+    headers: { 'X-CSRF-Token': csrf },
+    data: { branchId, startAt, items, client: { name: 'Отменяющий', phone: other }, notifyClient: false },
+  });
+  expect(manual.status(), await manual.text()).toBe(201);
+  const apptId = ((await manual.json()) as { appointment?: { id: string }; id?: string }).appointment?.id ?? ((await manual.json()) as { id: string }).id;
+  const cancelled = await owner.post(`${API}/organizations/${orgId}/appointments/${apptId}/status`, { headers: { 'X-CSRF-Token': csrf }, data: { status: 'cancelled_by_admin', reason: 'E2E' } });
+  expect(cancelled.status(), await cancelled.text()).toBe(200);
+  await owner.dispose();
 
   // 4. Воркер присылает предложение; клиент открывает ссылку и записывается.
   const offerText = await inbox(request, waiter, 'waitlist_offer', 90_000);

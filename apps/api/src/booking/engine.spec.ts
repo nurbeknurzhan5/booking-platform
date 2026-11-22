@@ -211,3 +211,29 @@ describe('назначение ресурсов', () => {
     expect(r?.items[0]!.resourceIds.sort()).toEqual(['e1', 'e3']);
   });
 });
+
+describe('групповая бронь мест (D-41)', () => {
+  const pc = svc('pc', 60, { requiresSpecialist: false, requirements: [{ resourceType: 'equipment', quantity: 1 }] });
+  // ряд из 5 ПК; второй занят в 10:00–11:00
+  const row = (busy2 = true) =>
+    [1, 2, 3, 4, 5].map((n) => res(`pc${n}`, 'equipment', ['pc'], { sortOrder: n, busy: busy2 && n === 2 ? [iv('10:00', '11:00')] : [] }));
+
+  it('без условия «рядом» занимает нужное число свободных мест по порядку', () => {
+    const r = findAssignment(at('10:00'), [pc], row(), [{ serviceId: 'pc', seats: 3 }], settings);
+    expect(r?.items[0]!.resourceIds).toEqual(['pc1', 'pc3', 'pc4']);
+    expect(r?.items[0]!.seats).toBe(3);
+  });
+
+  it('«рядом»: только места подряд — занятый ПК разрывает ряд', () => {
+    const r = findAssignment(at('10:00'), [pc], row(), [{ serviceId: 'pc', seats: 3, together: true }], settings);
+    expect(r?.items[0]!.resourceIds).toEqual(['pc3', 'pc4', 'pc5']);
+    expect(findAssignment(at('10:00'), [pc], row(), [{ serviceId: 'pc', seats: 4, together: true }], settings)).toBeNull();
+    // через час второй ПК свободен — четыре подряд находятся с начала ряда
+    expect(findAssignment(at('11:00'), [pc], row(), [{ serviceId: 'pc', seats: 4, together: true }], settings)?.items[0]!.resourceIds).toEqual(['pc1', 'pc2', 'pc3', 'pc4']);
+  });
+
+  it('мест больше, чем есть, — слотов нет', () => {
+    const slots = computeSlots({ date: DATE, timezone: TZ, branchWindows: [iv('10:00', '12:00')], services: [pc], resources: row(false), items: [{ serviceId: 'pc', seats: 6 }], settings });
+    expect(slots).toHaveLength(0);
+  });
+});

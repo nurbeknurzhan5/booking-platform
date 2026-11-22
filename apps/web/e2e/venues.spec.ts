@@ -1,18 +1,10 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { confirmViaTestPhone } from './link';
 
 /**
  * Демо-площадки (задача 22): компьютерный клуб и банный комплекс. Места и залы видны на странице,
  * запись на место без мастера проходит целиком (шаг выбора специалиста пропускается).
  */
-async function otpFor(page: Page, phone: string): Promise<string> {
-  for (let i = 0; i < 40; i++) {
-    const list = (await (await page.request.get(`/api/v1/dev/inbox?phone=${encodeURIComponent(phone)}`)).json()) as Array<{ type: string; text: string }>;
-    const otp = list.find((m) => m.type === 'otp');
-    if (otp) return /(\d{6})/.exec(otp.text)![1]!;
-    await page.waitForTimeout(500);
-  }
-  throw new Error('OTP not delivered');
-}
 
 test('компьютерный клуб: места и тарифы на странице, запись на VIP-ПК и отмена', async ({ page }) => {
   await page.goto('/ru/b/demo-club');
@@ -37,13 +29,12 @@ test('компьютерный клуб: места и тарифы на стр�
   await page.getByTestId('consent').check();
   await page.waitForTimeout(1600);
   await page.getByTestId('get-code').click();
-  await page.getByTestId('otp').fill(await otpFor(page, phone));
-  await page.getByTestId('confirm').click();
+  const confirmPage = await confirmViaTestPhone(page, phone);
   await expect(page.getByTestId('booking-done')).toContainText('ПК VIP');
-  await page.getByTestId('manage-link').click();
-  page.once('dialog', (d) => d.accept());
-  await page.getByTestId('cancel').click();
-  await expect(page.getByTestId('appointment-status')).toHaveText('Отменена вами');
+  await confirmPage.getByTestId('manage-link').click();
+  confirmPage.once('dialog', (d) => d.accept());
+  await confirmPage.getByTestId('cancel').click();
+  await expect(confirmPage.getByTestId('appointment-status')).toHaveText('Отменена вами');
 });
 
 test('банный комплекс: залы с фото и ценами, без горизонтальной прокрутки', async ({ page }) => {
@@ -54,4 +45,35 @@ test('банный комплекс: залы с фото и ценами, бе�
   await expect(resources.locator('img')).toHaveCount(3);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test('компьютерный клуб: компания бронирует три ПК рядом одной записью', async ({ page }, info) => {
+  // публичные резервы с одного IP ограничены (15 за 10 мин) — сценарий проверяется на ноутбуке и телефоне
+  test.skip(!['desktop', 'mobile'].includes(info.project.name), 'достаточно ноутбука и телефона');
+  await page.goto('/ru/b/demo-club/book');
+  await page.getByText('ПК Стандарт · 1 час', { exact: true }).click();
+  // выбор количества мест виден только для услуг-мест без мастера
+  await expect(page.getByTestId('seats-block')).toBeVisible();
+  await page.getByTestId('seats-plus').click();
+  await page.getByTestId('seats-plus').click();
+  await expect(page.getByTestId('seats-value')).toHaveText('3');
+  await expect(page.getByTestId('seats-together')).toBeChecked();
+  await page.locator('[data-testid^="date-"]').nth(3).click();
+  await page.getByTestId('slot').last().click();
+  await page.getByTestId('next').click();
+  const phone = `+7703${String(Date.now() % 10_000_000).padStart(7, '0')}`;
+  await page.getByTestId('name').fill('Компания');
+  await page.getByTestId('phone').fill(phone);
+  await page.getByTestId('consent').check();
+  await page.waitForTimeout(1600);
+  await page.getByTestId('get-code').click();
+  // цена × 3, места подряд
+  await expect(page.getByTestId('link-sent')).toContainText('2 400');
+  const confirmPage = await confirmViaTestPhone(page, phone);
+  await expect(confirmPage.getByTestId('confirm-ok')).toContainText('× 3');
+  await expect(confirmPage.getByTestId('confirm-ok')).toContainText(/ПК Стандарт (\d), ПК Стандарт (\d), ПК Стандарт (\d)/);
+  await confirmPage.getByTestId('manage-link').click();
+  confirmPage.once('dialog', (d) => d.accept());
+  await confirmPage.getByTestId('cancel').click();
+  await expect(confirmPage.getByTestId('appointment-status')).toHaveText('Отменена вами');
 });

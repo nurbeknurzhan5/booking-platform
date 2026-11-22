@@ -1,5 +1,7 @@
 'use client';
 
+import { Clock, MapPin, Phone } from 'lucide-react';
+import { DARK_BRANDS, SocialIcon } from './SocialIcon';
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PublicPageData } from '@/lib/types';
@@ -9,19 +11,6 @@ import { captureUtm, track } from '@/lib/analytics';
 import { themeRoot } from '@/lib/theme';
 import { MapBlock } from './MapBlock';
 
-const SOCIAL_ICONS: Record<string, string> = {
-  instagram: '📸',
-  whatsapp: '💬',
-  telegram: '✈️',
-  tiktok: '🎵',
-  facebook: '📘',
-  youtube: '▶️',
-  vk: '🅥',
-  threads: '🧵',
-  x: '✖️',
-  '2gis': '🗺️',
-  link: '🔗',
-};
 
 type Key = Parameters<typeof pt>[1];
 
@@ -124,7 +113,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
       <h1 className="tpl-heading text-4xl leading-[1.05] sm:text-6xl">{data.content.title}</h1>
       {data.content.tagline && <p className={`mt-4 max-w-2xl text-lg sm:text-xl ${light ? 'text-white/85' : 'tpl-muted'} ${centered ? 'mx-auto' : ''}`}>{data.content.tagline}</p>}
       <div className={`mt-5 flex flex-wrap gap-2 text-sm ${centered ? 'justify-center' : ''}`}>
-        {data.branch.address && <span className={`tpl-pill px-3 py-1 ${light ? 'bg-white/15 text-white backdrop-blur' : 'tpl-chip'}`}>📍 {data.branch.address}</span>}
+        {data.branch.address && <span className={`tpl-pill px-3 py-1 ${light ? 'bg-white/15 text-white backdrop-blur' : 'tpl-chip'}`}><MapPin className="mr-1 inline h-3.5 w-3.5 align-[-2px]" aria-hidden />{data.branch.address}</span>}
         {data.reviews.average !== null && (
           <span className={`tpl-pill px-3 py-1 ${light ? 'bg-white/15 text-white backdrop-blur' : 'tpl-chip'}`}>★ {data.reviews.average} · {data.reviews.count} {t('reviews').toLowerCase()}</span>
         )}
@@ -214,7 +203,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold">{s.name}</div>
                     {s.description && <p className="tpl-muted mt-1 text-sm">{s.description}</p>}
-                    <p className="tpl-muted mt-1.5 text-xs">⏱ {minutesLabel(s.durationMinutes, lang)}</p>
+                    <p className="tpl-muted mt-1.5 flex items-center gap-1 text-xs"><Clock className="h-3.5 w-3.5" aria-hidden />{minutesLabel(s.durationMinutes, lang)}</p>
                   </div>
                   <div className="flex flex-none flex-col items-end gap-2">
                     <div className="whitespace-nowrap text-lg font-bold">{money(s.price)}</div>
@@ -354,10 +343,10 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     contacts: () => (
       <Section key="contacts" id="contacts" title={t('contacts')}>
         <div className={`flex flex-wrap gap-3 ${centered ? 'justify-center' : ''}`}>
-          {data.branch.address && <span className="tpl-card px-5 py-3">📍 {data.branch.address}</span>}
+          {data.branch.address && <span className="tpl-card inline-flex items-center gap-2 px-5 py-3"><MapPin className="tpl-primary h-4 w-4" aria-hidden />{data.branch.address}</span>}
           {data.branch.phone && (
-            <a className="tpl-card px-5 py-3 font-semibold hover:opacity-80" href={`tel:${data.branch.phone}`}>
-              📞 {formatPhone(data.branch.phone)}
+            <a className="tpl-card inline-flex items-center gap-2 px-5 py-3 font-semibold hover:opacity-80" href={`tel:${data.branch.phone}`}>
+              <Phone className="tpl-primary h-4 w-4" aria-hidden />{formatPhone(data.branch.phone)}
             </a>
           )}
         </div>
@@ -366,7 +355,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     map: () =>
       data.branch.map ? (
         <Section key="map" id="map" title={t('map')}>
-          <MapBlock map={data.branch.map} label={t('openIn2gis')} />
+          <MapBlock map={data.branch.map} label={t('openIn2gis')} routeLabel={t('route2gis')} title={data.branch.name} />
         </Section>
       ) : null,
     socials: () =>
@@ -376,7 +365,9 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
             {data.content.socials.map((s) => (
               <li key={s.url}>
                 <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="tpl-card tpl-pill inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium hover:opacity-80">
-                  <span aria-hidden>{SOCIAL_ICONS[s.platform] ?? SOCIAL_ICONS.link}</span>
+                  <span className={DARK_BRANDS.has(s.platform) ? 'tpl-brand-dark' : ''}>
+                    <SocialIcon platform={s.platform} />
+                  </span>
                   {s.label}
                 </a>
               </li>

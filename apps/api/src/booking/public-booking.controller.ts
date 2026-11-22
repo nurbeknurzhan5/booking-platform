@@ -6,7 +6,7 @@ import type { Request, Response } from 'express';
 import {
   AvailabilitySearchSchema,
   CancelSchema,
-  ConfirmHoldSchema,
+  ConfirmLinkSchema,
   CreateHoldSchema,
   HoldTokenSchema,
   QuoteSchema,
@@ -22,7 +22,7 @@ import { sha256 } from '../common/crypto';
 class SearchDto extends createZodDto(AvailabilitySearchSchema) {}
 class QuoteDto extends createZodDto(QuoteSchema) {}
 class HoldDto extends createZodDto(CreateHoldSchema) {}
-class ConfirmDto extends createZodDto(ConfirmHoldSchema) {}
+class ConfirmLinkDto extends createZodDto(ConfirmLinkSchema) {}
 class HoldTokenDto extends createZodDto(HoldTokenSchema) {}
 class RescheduleDto extends createZodDto(RescheduleSchema) {}
 class CancelDto extends createZodDto(CancelSchema) {}
@@ -79,7 +79,7 @@ export class PublicBookingController {
   @Post('branches/:slug/bookings')
   @RateLimit({ name: 'pub-hold-ip', limit: 15, windowSec: 600, by: 'ip' })
   @ApiHeader({ name: 'Idempotency-Key', required: false })
-  @ApiOperation({ summary: 'Создать временный резерв и отправить OTP (атомарно, без двойного бронирования)' })
+  @ApiOperation({ summary: 'Создать временный резерв и отправить ссылку подтверждения (атомарно, без двойного бронирования)' })
   async createHold(
     @Param('slug') slug: string,
     @Body() body: HoldDto,
@@ -96,31 +96,28 @@ export class PublicBookingController {
     return r.body;
   }
 
-  @Post('bookings/:id/confirm')
+  @Post('bookings/confirm-link')
   @HttpCode(200)
   @RateLimit({ name: 'pub-confirm', limit: 30, windowSec: 600, by: 'ip' })
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
-  @ApiOperation({ summary: 'Подтвердить запись кодом OTP' })
-  async confirm(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: ConfirmDto,
-    @Headers('idempotency-key') key: string | undefined,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const r = await this.idem.run(`confirm:${id}`, key, body, async () => ({
-      body: await this.booking.confirmHold(id, body.holdToken, body.code, clientIp(req)),
-    }));
-    res.status(r.status);
-    return r.body;
+  @ApiOperation({ summary: 'Подтвердить запись по одноразовой ссылке из сообщения' })
+  confirmLink(@Body() body: ConfirmLinkDto, @Req() req: Request) {
+    return this.booking.confirmByLink(body.token, clientIp(req));
   }
 
-  @Post('bookings/:id/resend-otp')
+  @Post('bookings/:id/status')
+  @HttpCode(200)
+  @RateLimit({ name: 'pub-hold-status', limit: 120, windowSec: 600, by: 'ip' })
+  @ApiOperation({ summary: 'Состояние резерва: страница записи ждёт перехода по ссылке' })
+  holdStatus(@Param('id', ParseUUIDPipe) id: string, @Body() body: HoldTokenDto) {
+    return this.booking.holdStatus(id, body.holdToken);
+  }
+
+  @Post('bookings/:id/resend-link')
   @HttpCode(200)
   @RateLimit({ name: 'pub-resend', limit: 10, windowSec: 600, by: 'ip' })
-  @ApiOperation({ summary: 'Повторно отправить OTP (с ограничением частоты)' })
+  @ApiOperation({ summary: 'Отправить новую ссылку подтверждения (прежняя перестаёт действовать)' })
   resend(@Param('id', ParseUUIDPipe) id: string, @Body() body: HoldTokenDto, @Req() req: Request) {
-    return this.booking.resendOtp(id, body.holdToken, clientIp(req));
+    return this.booking.resendLink(id, body.holdToken, clientIp(req));
   }
 
   @Post('bookings/:id/extend')

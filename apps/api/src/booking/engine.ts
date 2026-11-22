@@ -63,6 +63,10 @@ export interface EngineResource {
 export interface RequestItem {
   serviceId: string;
   specialistId?: string | null;
+  /** Групповая бронь (D-41): число одинаковых мест; требование к ресурсу умножается на него. */
+  seats?: number;
+  /** Места подряд по порядку ресурсов (sortOrder) — «сидеть рядом». */
+  together?: boolean;
 }
 
 export interface EngineSettings {
@@ -85,6 +89,7 @@ export interface AssignedItem {
   specialistId: string | null;
   specialistResourceId: string | null;
   resourceIds: string[];
+  seats: number;
 }
 
 export interface SlotAssignment {
@@ -226,6 +231,8 @@ interface ItemPlan {
   position: number;
   service: EngineService;
   specialistId: string | null;
+  seats: number;
+  together: boolean;
   start: number;
   end: number;
   occupancy: Interval;
@@ -247,6 +254,8 @@ function planItems(services: EngineService[], items: RequestItem[], start: numbe
       position: idx,
       service: svc,
       specialistId: it.specialistId ?? null,
+      seats: Math.max(1, it.seats ?? 1),
+      together: !!it.together,
       start: s,
       end: e,
       occupancy: { start: s - svc.bufferBeforeMinutes * MIN, end: e + svc.bufferAfterMinutes * MIN },
@@ -291,6 +300,19 @@ export function findAssignment(
   const pickResources = (plan: ItemPlan, reqIdx: number, chosen: string[], done: (ids: string[]) => boolean): boolean => {
     if (reqIdx >= plan.service.requirements.length) return done(chosen);
     const req = plan.service.requirements[reqIdx]!;
+    const quantity = req.quantity * plan.seats;
+    if (plan.together && quantity > 1) {
+      // Места подряд: окно из quantity соседних по порядку ресурсов (с учётом занятых — они разрывают ряд).
+      const row = resources
+        .filter((r) => r.type === req.resourceType && r.serviceIds.has(plan.service.id))
+        .sort((a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      for (let i = 0; i + quantity <= row.length; i++) {
+        if (++steps > MAX_SEARCH_STEPS) return false;
+        const window = row.slice(i, i + quantity);
+        if (window.every((r) => !chosen.includes(r.id) && free(r, plan.occupancy)) && pickResources(plan, reqIdx + 1, [...chosen, ...window.map((r) => r.id)], done)) return true;
+      }
+      return false;
+    }
     const candidates = orderCandidates(
       resources.filter((r) => r.type === req.resourceType && r.serviceIds.has(plan.service.id) && !chosen.includes(r.id) && free(r, plan.occupancy)),
       false,
@@ -298,7 +320,7 @@ export function findAssignment(
     );
     const choose = (from: number, picked: string[]): boolean => {
       if (++steps > MAX_SEARCH_STEPS) return false;
-      if (picked.length === req.quantity) return pickResources(plan, reqIdx + 1, [...chosen, ...picked], done);
+      if (picked.length === quantity) return pickResources(plan, reqIdx + 1, [...chosen, ...picked], done);
       for (let i = from; i < candidates.length; i++) {
         if (choose(i + 1, [...picked, candidates[i]!.id])) return true;
       }
@@ -342,6 +364,7 @@ export function findAssignment(
           specialistId: sp?.specialistId ?? null,
           specialistResourceId: sp?.id ?? null,
           resourceIds: ids,
+          seats: plan.seats,
         });
         if (assign(idx + 1)) return true;
         result.pop();

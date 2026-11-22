@@ -36,6 +36,11 @@ export function BookingSelect({
   onSlotChange,
   date: dateProp,
   onDateChange,
+  items,
+  seats,
+  onSeatsChange,
+  together,
+  onTogetherChange,
   reloadToken,
   quote,
   onContinue,
@@ -51,6 +56,12 @@ export function BookingSelect({
   /** Дата хранится в форме записи: при возврате с шага «Ваши данные» выбор не теряется. */
   date: string | null;
   onDateChange: (d: string) => void;
+  /** Позиции запроса (собираются в форме записи: мастер и число мест). */
+  items: Array<{ serviceId: string; specialistId: string | null; seats?: number; together?: boolean }>;
+  seats: number;
+  onSeatsChange: (n: number) => void;
+  together: boolean;
+  onTogetherChange: (v: boolean) => void;
   reloadToken: number;
   quote: Quote | null;
   onContinue: () => void;
@@ -74,11 +85,6 @@ export function BookingSelect({
   const chosen = sp(specialist);
   const does = (spId: string, serviceId: string) => !!sp(spId)?.serviceIds.includes(serviceId);
 
-  // Мастер применяется к тем выбранным услугам, которые он оказывает; остальные — «любой свободный»
-  const items = useMemo(
-    () => selected.map((serviceId) => ({ serviceId, specialistId: specialist && does(specialist, serviceId) ? specialist : null })),
-    [selected, specialist],
-  );
   const itemsKey = JSON.stringify(items);
 
   useEffect(() => {
@@ -121,6 +127,13 @@ export function BookingSelect({
   useEffect(() => {
     if (specialist && selected.length && !selected.some((sid) => does(specialist, sid))) onSpecialistChange(null);
   }, [selected, specialist]);
+
+  // Несколько мест — только если все выбранные услуги без мастера и для каждой есть хотя бы два места (D-41)
+  const capacity = (serviceId: string) => data.resources.filter((r) => r.serviceIds.includes(serviceId)).length;
+  const seatCapacity = selected.length && selected.every((sid) => !data.specialists.some((x) => x.serviceIds.includes(sid))) ? Math.min(10, ...selected.map(capacity)) : 1;
+  useEffect(() => {
+    if (seats > Math.max(1, seatCapacity)) onSeatsChange(Math.max(1, seatCapacity));
+  }, [seatCapacity, seats]);
 
   function toggleService(id: string) {
     onSelectedChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
@@ -203,6 +216,31 @@ export function BookingSelect({
             ))}
           </div>
         </section>
+
+        {/* Групповая бронь мест */}
+        {seatCapacity > 1 && (
+          <section aria-labelledby="sec-seats" className="tpl-soft tpl-r p-4" data-testid="seats-block">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="sec-seats" className="font-semibold">{t('seatsTitle')}</h2>
+                <p className="tpl-muted text-sm">{t('seatsHint')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => onSeatsChange(Math.max(1, seats - 1))} disabled={seats <= 1} className="tpl-card tpl-border h-10 w-10 rounded-full border text-xl font-semibold disabled:opacity-40" aria-label="−" data-testid="seats-minus">−</button>
+                <span className="w-10 text-center text-xl font-bold" data-testid="seats-value">{seats}</span>
+                <button type="button" onClick={() => onSeatsChange(Math.min(seatCapacity, seats + 1))} disabled={seats >= seatCapacity} className="tpl-card tpl-border h-10 w-10 rounded-full border text-xl font-semibold disabled:opacity-40" aria-label="+" data-testid="seats-plus">+</button>
+              </div>
+            </div>
+            {seats > 1 && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+                <input type="checkbox" checked={together} onChange={(e) => onTogetherChange(e.target.checked)} className="mt-0.5 h-4 w-4" data-testid="seats-together" />
+                <span>
+                  <b>{t('seatsTogether')}</b> <span className="tpl-muted">— {t('seatsTogetherHint')}</span>
+                </span>
+              </label>
+            )}
+          </section>
+        )}
 
         {/* 2. Специалист */}
         {relevantSpecialists.length > 0 && (
@@ -322,7 +360,7 @@ export function BookingSelect({
         <dl className="hidden space-y-2 text-sm lg:block">
           <div>
             <dt className="tpl-muted text-xs">{t('secServices')}</dt>
-            <dd>{selected.length ? selected.map((sid) => <div key={sid}>{data.services.find((s) => s.id === sid)?.name}</div>) : <span className="tpl-muted">{t('notChosen')}</span>}</dd>
+            <dd>{selected.length ? selected.map((sid) => <div key={sid}>{data.services.find((s) => s.id === sid)?.name}{seats > 1 ? ` × ${seats}` : ''}</div>) : <span className="tpl-muted">{t('notChosen')}</span>}</dd>
           </div>
           {relevantSpecialists.length > 0 && (
             <div>

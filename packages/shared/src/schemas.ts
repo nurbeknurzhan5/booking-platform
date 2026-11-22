@@ -337,6 +337,10 @@ export const BookingItemSchema = z.object({
   serviceId: zId,
   /** null/не указан — автоматический подбор («любой специалист»). */
   specialistId: zId.nullable().optional(),
+  /** Групповая бронь (D-41): сколько одинаковых мест занять (ПК, консоли). Только для услуг без специалиста. */
+  seats: z.number().int().min(1).max(10).optional(),
+  /** Места должны идти подряд по нумерации («сидеть рядом»). */
+  together: z.boolean().optional(),
 });
 
 export const AvailabilitySearchSchema = z.object({
@@ -375,7 +379,8 @@ export const CreateHoldSchema = z.object({
 });
 
 export const HoldTokenSchema = z.object({ holdToken: z.string().min(20).max(200) });
-export const ConfirmHoldSchema = HoldTokenSchema.extend({ code: z.string().regex(/^\d{6}$/) });
+/** Подтверждение записи по ссылке из сообщения (D-42): токен `<id>.<секрет>`. */
+export const ConfirmLinkSchema = z.object({ token: z.string().min(40).max(200) });
 
 export const RescheduleSchema = z.object({
   startAt: zDateTime,

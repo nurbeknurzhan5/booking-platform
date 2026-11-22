@@ -54,6 +54,16 @@ export const NOTIFICATION_TEMPLATES: Tpl[] = [
     en: 'Your verification code: {{code}}. Valid for {{minutes}} min. Do not share it.',
   },
   {
+    // D-42: подтверждение записи по одноразовой ссылке вместо кода
+    type: 'booking_link',
+    category: 'UTILITY',
+    meta: 'booking_confirm_link',
+    vars: ['branchName', 'date', 'time', 'url', 'minutes'],
+    ru: 'Подтвердите запись в «{{branchName}}» на {{date}} в {{time}} — откройте ссылку: {{url}} Ссылка действует {{minutes}} мин. Если вы не записывались, просто проигнорируйте это сообщение.',
+    kk: '«{{branchName}}» мекемесіне {{date}} {{time}} жазылуды растаңыз — сілтемені ашыңыз: {{url}} Сілтеме {{minutes}} мин жарамды. Егер сіз жазылмаған болсаңыз, хабарламаны елемеңіз.',
+    en: 'Confirm your booking at "{{branchName}}" on {{date}} at {{time}} — open the link: {{url}} The link is valid for {{minutes}} min. If you did not book, just ignore this message.',
+  },
+  {
     type: 'appointment_confirmed',
     category: 'UTILITY',
     meta: 'appointment_confirmed',

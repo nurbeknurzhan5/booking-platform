@@ -145,8 +145,12 @@ export async function bookAndConfirm(
   });
   if (hold.status !== 201) return { hold, confirm: null, phone, http };
   await drainNotifications(ctx);
-  const msg = await ctx.prisma.devInboxMessage.findFirstOrThrow({ where: { recipient: phone, type: 'otp' }, orderBy: { createdAt: 'desc' } });
-  const code = /(\d{6})/.exec(msg.text)![1]!;
-  const confirm = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/confirm`, { holdToken: hold.body.holdToken, code });
+  const confirm = await http.post(`${API}/public/bookings/confirm-link`, { token: await linkTokenFor(ctx, phone) });
   return { hold, confirm, phone, http };
+}
+
+/** Токен из последней ссылки подтверждения записи, пришедшей на номер (D-42). */
+export async function linkTokenFor(ctx: TestContext, phone: string): Promise<string> {
+  const msg = await ctx.prisma.devInboxMessage.findFirstOrThrow({ where: { recipient: phone, type: 'booking_link' }, orderBy: { createdAt: 'desc' } });
+  return /\/confirm\/([0-9a-f-]{36}\.[A-Za-z0-9_-]+)/.exec(msg.text)![1]!;
 }

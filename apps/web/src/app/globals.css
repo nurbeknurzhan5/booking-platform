@@ -121,3 +121,8 @@ body {
 .focus-ring {
   @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
 }
+
+/* Тёмные логотипы (TikTok, X, Threads) берут цвет текста темы — видны и на светлых, и на тёмных темах. */
+.tpl .tpl-brand-dark svg {
+  fill: var(--tpl-text);
+}

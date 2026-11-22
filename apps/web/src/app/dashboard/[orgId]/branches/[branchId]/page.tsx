@@ -10,6 +10,7 @@ import { api, errorMessage } from '@/lib/api';
 import { Alert, Button, Card, Checkbox, Field, Input, PageHeader, Select, Spinner, Tabs, Textarea } from '@/components/ui';
 import { SpecialistsTab, ResourcesTab } from '@/components/dashboard/BranchStaffTabs';
 import { ScheduleTab } from '@/components/dashboard/ScheduleTab';
+import { MapPicker } from '@/components/dashboard/MapPicker';
 
 type Tab = 'settings' | 'rules' | 'specialists' | 'resources' | 'schedule';
 
@@ -111,6 +112,13 @@ function BranchSettings({ branch, onSaved, canEdit }: { branch: BranchFull; onSa
         <Field label={t('mapUrl')}><Input value={f.mapUrl ?? ''} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} disabled={!canEdit} placeholder="https://2gis.kz/..." /></Field>
         <Field label={t('latitude')}><Input type="number" step="any" value={f.latitude ?? ''} onChange={(e) => setF({ ...f, latitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} placeholder="43.2389" /></Field>
         <Field label={t('longitude')}><Input type="number" step="any" value={f.longitude ?? ''} onChange={(e) => setF({ ...f, longitude: e.target.value === '' ? null : Number(e.target.value) })} disabled={!canEdit} placeholder="76.8897" /></Field>
+        {/* выбор точки на временной карте (D-43); с ключом 2ГИС в production — ввод координат */}
+        {process.env.NEXT_PUBLIC_APP_ENV !== 'production' && (
+          <div className="sm:col-span-2">
+            <p className="mb-2 text-sm text-slate-600">{t('mapPickHint')}</p>
+            <MapPicker lat={f.latitude} lng={f.longitude} onChange={(latitude, longitude) => setF((cur) => ({ ...cur, latitude, longitude }))} disabled={!canEdit} />
+          </div>
+        )}
         <div className="sm:col-span-2">
           <Checkbox checked={f.mapEnabled} onChange={(e) => setF({ ...f, mapEnabled: e.target.checked })} label={t('mapEnabled')} disabled={!canEdit} />
           <p className="mt-1 text-xs text-slate-500">{t('mapHint')}</p>

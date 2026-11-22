@@ -42,6 +42,7 @@ export type TranslationStatus = (typeof TRANSLATION_STATUSES)[number];
 
 export const NOTIFICATION_TYPES = [
   'otp',
+  'booking_link',
   'appointment_confirmed',
   'appointment_reminder',
   'appointment_rescheduled',

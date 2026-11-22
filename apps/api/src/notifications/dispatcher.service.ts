@@ -5,7 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto';
 import { getConfig } from '../config/config';
 import { ChannelError, DevInboxChannel, SmsChannel, WhatsAppChannel, type ChannelAdapter, type OutgoingMessage } from './channels';
-import { NotificationService } from './notification.service';
+import { NotificationService, ONE_TIME_TYPES } from './notification.service';
 import { maskPhone } from '@booking/shared';
 import type { NotificationOutbox } from '../generated/prisma/client';
 
@@ -131,7 +131,7 @@ export class NotificationDispatcher {
     } catch (e) {
       const err = e instanceof ChannelError ? e : new ChannelError((e as Error).message, true, 'INTERNAL');
       const dead = !err.retryable || row.attempts >= row.maxAttempts;
-      if (dead && row.type === 'otp' && row.channel === 'whatsapp') await this.fallbackOtpToSms(row);
+      if (dead && ONE_TIME_TYPES.has(row.type) && row.channel === 'whatsapp') await this.fallbackOtpToSms(row);
       // Текст ошибки не содержит параметров сообщения; номер в логах маскируется.
       this.logger.warn({ outboxId: row.id, channel: row.channel, to: maskPhone(row.recipient), code: err.code, dead }, 'Notification delivery failed');
       await this.prisma.$transaction([

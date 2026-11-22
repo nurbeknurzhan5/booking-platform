@@ -34,8 +34,11 @@ type ManualInput = z.infer<typeof ManualAppointmentSchema>;
 const CONSENT_TEXT_VERSION = '2026-11-v1';
 const MAX_CONFLICT_RETRIES = 3;
 
-const APPOINTMENT_INCLUDE = {
-  items: { orderBy: { position: 'asc' as const } },
+export const APPOINTMENT_INCLUDE = {
+  items: {
+    orderBy: { position: 'asc' as const },
+    include: { resources: { where: { isActive: true }, select: { resource: { select: { name: true, type: true, sortOrder: true } } } } },
+  },
   branch: { select: { id: true, name: true, slug: true, address: true, phone: true, timezone: true, organizationId: true } },
   client: { select: { id: true, name: true, phone: true } },
   hold: { select: { expiresAt: true, releasedAt: true, extensionCount: true } },
@@ -58,6 +61,7 @@ interface PricedPlan {
     durationMinutes: number;
     bufferBefore: number;
     bufferAfter: number;
+    seats: number;
     basePrice: number;
     saleDiscount: number;
     salePromotionId: string | null;
@@ -182,6 +186,13 @@ export class BookingService {
       if (it.specialistId && !ctx.resources.some((r) => r.specialistId === it.specialistId && r.serviceIds.has(it.serviceId))) {
         throw AppError.badRequest('VALIDATION_ERROR', 'Выбранный специалист не оказывает эту услугу в филиале');
       }
+      if ((it.seats ?? 1) > 1) {
+        // Несколько мест — только для услуг-мест (ПК, консоли), без специалиста (D-41)
+        const svc = ctx.services.find((s) => s.id === it.serviceId);
+        if (!svc || svc.requiresSpecialist || svc.requirements.length === 0) {
+          throw AppError.badRequest('VALIDATION_ERROR', 'Несколько мест можно забронировать только для услуг без специалиста, которым нужно место');
+        }
+      }
     }
   }
 
@@ -214,12 +225,14 @@ export class BookingService {
     const sales = preloadedSales ?? (await this.activeSales(db, ctx.branch.organizationId, ctx.branch.id, now));
     const priceItems = assignment.items.map((it) => {
       const svc = ctx.services.find((s) => s.id === it.serviceId)!;
-      const basePrice = resolveServicePrice({
-        servicePrice: svc.basePrice,
-        branchPrice: svc.branchPrice,
-        specialistPrice: it.specialistId ? (ctx.specialistPrices.get(`${it.specialistId}:${it.serviceId}`) ?? null) : null,
-        specialistPricingEnabled: ctx.settings.specialistPricingEnabled,
-      });
+      // Групповая бронь (D-41): цена за место × число мест
+      const basePrice =
+        resolveServicePrice({
+          servicePrice: svc.basePrice,
+          branchPrice: svc.branchPrice,
+          specialistPrice: it.specialistId ? (ctx.specialistPrices.get(`${it.specialistId}:${it.serviceId}`) ?? null) : null,
+          specialistPricingEnabled: ctx.settings.specialistPricingEnabled,
+        }) * (it.seats ?? 1);
       const itemSales: SaleOffer[] = sales
         .filter((s) => s.allServices || s.serviceIds.includes(it.serviceId))
         .map((s) => ({ promotionId: s.id, discountType: s.discountType, value: s.discountValue }));
@@ -288,6 +301,7 @@ export class BookingService {
           durationMinutes: svc.durationMinutes,
           bufferBefore: svc.bufferBeforeMinutes,
           bufferAfter: svc.bufferAfterMinutes,
+          seats: it.seats ?? 1,
           basePrice: p.basePrice,
           saleDiscount: p.saleDiscount,
           salePromotionId: p.salePromotionId,
@@ -320,7 +334,7 @@ export class BookingService {
         const start = ctx.settings.multiServiceMode === 'parallel' ? 0 : cursor;
         const end = start + svc.durationMinutes * 60_000;
         cursor = end + (svc.bufferAfterMinutes ?? 0) * 60_000;
-        return { position: idx, serviceId: it.serviceId, start, end, occupancy: { start, end }, specialistId: it.specialistId ?? null, specialistResourceId: null, resourceIds: [] };
+        return { position: idx, serviceId: it.serviceId, start, end, occupancy: { start, end }, specialistId: it.specialistId ?? null, specialistResourceId: null, resourceIds: [], seats: it.seats ?? 1 };
       }),
     };
     virtual.end = Math.max(...virtual.items.map((i) => i.end));
@@ -409,6 +423,7 @@ export class BookingService {
           durationMinutes: it.durationMinutes,
           bufferBeforeMinutes: it.bufferBefore,
           bufferAfterMinutes: it.bufferAfter,
+          seats: it.seats,
           serviceNameSnapshot: it.serviceName,
           specialistNameSnapshot: it.specialistName,
           basePrice: it.basePrice,
@@ -672,18 +687,17 @@ export class BookingService {
             });
           }
 
-          // Новая запись: прежних кодов по ней нет, инвалидировать нечего.
-          const issued = await this.otp.issue(tx, { phone: input.client.phone, purpose: 'booking', appointmentId: appointment.id, ip, fresh: true });
-          await this.notifications.enqueue(tx, {
+          // Ссылка подтверждения (D-42) живёт столько же, сколько резерв. Новая запись — прежних ссылок нет.
+          const issued = await this.otp.issueLink(tx, { phone: input.client.phone, purpose: 'booking', appointmentId: appointment.id, ip, fresh: true, ttlSeconds: ctx.settings.holdMinutes * 60 });
+          await this.enqueueBookingLink(tx, {
             organizationId,
-            type: 'otp',
-            eventKey: `otp:${issued.otpId}`,
-            recipient: input.client.phone,
-            locale: input.locale,
-            params: { code: issued.code, minutes: String(Math.round((issued.expiresAt.getTime() - Date.now()) / 60_000)) },
-            sensitive: true,
+            otpId: issued.otpId,
+            token: issued.token,
             expiresAt: issued.expiresAt,
-            appointmentId: appointment.id,
+            phone: input.client.phone,
+            locale: input.locale,
+            appointment: { id: appointment.id, startAt: appointment.startAt, totalPrice: appointment.totalPrice },
+            branch,
             clientId: client.id,
           });
           return { appointmentId: appointment.id, holdToken, holdExpiresAt: hold.expiresAt, otpExpiresAt: issued.expiresAt };
@@ -697,8 +711,59 @@ export class BookingService {
       holdToken: created.holdToken,
       holdExpiresAt: created.holdExpiresAt.toISOString(),
       otpExpiresAt: created.otpExpiresAt.toISOString(),
+      /** Тестовая среда: сообщения не уходят в WhatsApp, а складываются в «Тестовый телефон» (/dev/phone). */
+      testInbox: this.notifications.enabledChannels().includes('dev_inbox'),
       appointment: this.toView(full, base.settings),
     };
+  }
+
+  /** Сообщение со ссылкой подтверждения записи (D-42). */
+  private async enqueueBookingLink(
+    tx: Tx,
+    a: {
+      organizationId: string;
+      otpId: string;
+      token: string;
+      expiresAt: Date;
+      phone: string;
+      locale: string;
+      appointment: { id: string; startAt: Date; totalPrice: number };
+      branch: { name: string; timezone: string };
+      clientId?: string;
+    },
+  ) {
+    await this.notifications.enqueue(tx, {
+      organizationId: a.organizationId,
+      type: 'booking_link',
+      eventKey: `booking_link:${a.otpId}`,
+      recipient: a.phone,
+      locale: a.locale,
+      params: this.notificationParams({ startAt: a.appointment.startAt, locale: a.locale, totalPrice: a.appointment.totalPrice }, a.branch, {
+        url: `${getConfig().PUBLIC_BASE_URL}/${a.locale}/confirm/${a.token}`,
+        minutes: String(Math.max(1, Math.round((a.expiresAt.getTime() - Date.now()) / 60_000))),
+      }),
+      sensitive: true,
+      expiresAt: a.expiresAt,
+      appointmentId: a.appointment.id,
+      clientId: a.clientId,
+    });
+  }
+
+  /** Состояние резерва для страницы записи: она ждёт, пока клиент откроет ссылку из сообщения. */
+  async holdStatus(appointmentId: string, holdToken: string) {
+    const hold = await this.loadHold(appointmentId, holdToken);
+    const status = hold.appointment.status;
+    const expired = !hold.releasedAt && hold.expiresAt.getTime() <= Date.now();
+    return { status: expired ? 'expired' : status, holdExpiresAt: hold.expiresAt.toISOString() };
+  }
+
+  /** Подтверждение по ссылке из сообщения (D-42): ссылка одноразовая и привязана к номеру и резерву. */
+  async confirmByLink(token: string, ip: string) {
+    const link = await this.otp.verifyLink(token, 'booking');
+    if (!link.appointmentId) throw AppError.badRequest('OTP_INVALID', 'Ссылка недействительна');
+    const hold = await this.prisma.bookingHold.findUnique({ where: { appointmentId: link.appointmentId }, include: { appointment: true } });
+    if (!hold || hold.phone !== link.phone) throw AppError.badRequest('OTP_INVALID', 'Ссылка недействительна');
+    return this.finalizeHold(hold, ip);
   }
 
   private async loadHold(appointmentId: string, holdToken: string) {
@@ -707,9 +772,9 @@ export class BookingService {
     return hold;
   }
 
-  /** Подтверждение OTP → confirmed (§8.1 п.10–13). */
-  async confirmHold(appointmentId: string, holdToken: string, code: string, ip: string) {
-    const hold = await this.loadHold(appointmentId, holdToken);
+  /** Резерв → confirmed (§8.1 п.10–13) после перехода по ссылке. */
+  private async finalizeHold(hold: Awaited<ReturnType<BookingService['loadHold']>>, ip: string) {
+    const appointmentId = hold.appointmentId;
     if (hold.releasedAt) {
       if (hold.releaseReason === 'confirmed') throw AppError.conflict('Запись уже подтверждена');
       throw AppError.badRequest('HOLD_EXPIRED', 'Время резерва истекло. Выберите время заново.');
@@ -718,8 +783,6 @@ export class BookingService {
       await this.prisma.$transaction((tx) => this.releaseExpiredHolds(tx, { appointmentId }));
       throw AppError.badRequest('HOLD_EXPIRED', 'Время резерва истекло. Выберите время заново.');
     }
-    await this.otp.verify({ phone: hold.phone, purpose: 'booking', code, appointmentId });
-
     const manageToken = randomToken(32);
     const result = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ released_at: Date | null; expires_at: Date }>>`
@@ -734,7 +797,7 @@ export class BookingService {
         include: APPOINTMENT_INCLUDE,
       });
       await tx.bookingHold.update({ where: { appointmentId }, data: { releasedAt: new Date(), releaseReason: 'confirmed' } });
-      await this.history(tx, appt.organizationId, appointmentId, 'pending_otp', 'confirmed', { userId: null, actorType: 'system', ip, userAgent: null }, 'OTP подтверждён');
+      await this.history(tx, appt.organizationId, appointmentId, 'pending_otp', 'confirmed', { userId: null, actorType: 'client', ip, userAgent: null }, 'Подтверждено по ссылке');
       await tx.promotionRedemption.updateMany({ where: { appointmentId, status: 'reserved' }, data: { status: 'applied' } });
       // Привязка к платформенному профилю, если номер уже зарегистрирован (§10).
       const user = await tx.user.findUnique({ where: { phone: hold.phone }, select: { id: true } });
@@ -777,22 +840,24 @@ export class BookingService {
     return { utmSource: u.source ?? null, utmMedium: u.medium ?? null, utmCampaign: u.campaign ?? null, utmTerm: u.term ?? null, utmContent: u.content ?? null };
   }
 
-  async resendOtp(appointmentId: string, holdToken: string, ip: string) {
+  /** Новая ссылка подтверждения (прежняя перестаёт действовать). */
+  async resendLink(appointmentId: string, holdToken: string, ip: string) {
     const hold = await this.loadHold(appointmentId, holdToken);
     if (hold.releasedAt || hold.expiresAt.getTime() <= Date.now()) throw AppError.badRequest('HOLD_EXPIRED', 'Время резерва истекло');
     await this.otp.assertCanSend(hold.phone, 'booking', ip);
+    const branch = await this.prisma.branch.findUniqueOrThrow({ where: { id: hold.appointment.branchId }, select: { name: true, timezone: true } });
     const issued = await this.prisma.$transaction(async (tx) => {
-      const i = await this.otp.issue(tx, { phone: hold.phone, purpose: 'booking', appointmentId, ip });
-      await this.notifications.enqueue(tx, {
+      const ttl = Math.max(60, Math.round((hold.expiresAt.getTime() - Date.now()) / 1000));
+      const i = await this.otp.issueLink(tx, { phone: hold.phone, purpose: 'booking', appointmentId, ip, ttlSeconds: ttl });
+      await this.enqueueBookingLink(tx, {
         organizationId: hold.organizationId,
-        type: 'otp',
-        eventKey: `otp:${i.otpId}`,
-        recipient: hold.phone,
-        locale: hold.appointment.locale,
-        params: { code: i.code, minutes: String(Math.round((i.expiresAt.getTime() - Date.now()) / 60_000)) },
-        sensitive: true,
+        otpId: i.otpId,
+        token: i.token,
         expiresAt: i.expiresAt,
-        appointmentId,
+        phone: hold.phone,
+        locale: hold.appointment.locale,
+        appointment: hold.appointment,
+        branch,
       });
       return i;
     });
@@ -813,6 +878,8 @@ export class BookingService {
     });
     if (r.count !== 1) throw AppError.unprocessable('HOLD_EXTENSION_NOT_ALLOWED', 'Продление резерва недоступно');
     const h = await this.prisma.bookingHold.findUniqueOrThrow({ where: { appointmentId } });
+    // действующая ссылка подтверждения продлевается вместе с резервом
+    await this.prisma.otpCode.updateMany({ where: { appointmentId, purpose: 'booking', consumedAt: null, invalidatedAt: null }, data: { expiresAt: h.expiresAt } });
     return { holdExpiresAt: h.expiresAt.toISOString() };
   }
 
@@ -968,7 +1035,7 @@ export class BookingService {
       throw AppError.unprocessable('RESCHEDULE_DEADLINE_PASSED', 'Срок самостоятельного переноса истёк. Свяжитесь с филиалом.');
     }
     const items: RequestItem[] =
-      input.items ?? existing.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId }));
+      input.items ?? existing.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId, seats: i.seats, together: false }));
     const oldServices = existing.items.map((i) => i.serviceId).join(',');
     if (items.map((i) => i.serviceId).join(',') !== oldServices) {
       throw AppError.badRequest('VALIDATION_ERROR', 'При переносе нельзя менять состав услуг — создайте новую запись');
@@ -1095,7 +1162,7 @@ export class BookingService {
       await tx.bookingHold.updateMany({ where: { appointmentId, releasedAt: null }, data: { releasedAt: new Date(), releaseReason: 'abandoned' } });
       await tx.promotionRedemption.updateMany({ where: { appointmentId }, data: { status: 'released' } });
       await this.history(tx, a.organizationId, appointmentId, a.status, to, actor, reason);
-      await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder', 'otp']);
+      await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder', 'otp', 'booking_link']);
       if (a.status === 'confirmed') {
         await this.recordFreedSlot(tx, a, freedResourceIds, settings.waitlistEnabled);
         await this.notifications.enqueue(tx, {
@@ -1220,6 +1287,13 @@ export class BookingService {
         startAt: i.startAt.toISOString(),
         endAt: i.endAt.toISOString(),
         durationMinutes: i.durationMinutes,
+        seats: i.seats,
+        // занятые места (ПК, залы, кабинеты) — без специалиста
+        places: i.resources
+          .map((r) => r.resource)
+          .filter((r) => r.type !== 'specialist')
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((r) => r.name),
         basePrice: i.basePrice,
         saleDiscount: i.saleDiscount,
         promoDiscount: i.promoDiscount,

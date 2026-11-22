@@ -2265,29 +2265,47 @@
             "description": ""
           }
         },
-        "summary": "Создать временный резерв и отправить OTP (атомарно, без двойного бронирования)",
+        "summary": "Создать временный резерв и отправить ссылку подтверждения (атомарно, без двойного бронирования)",
         "tags": [
           "availability",
           "appointments"
         ]
       }
     },
-    "/api/v1/public/bookings/{id}/confirm": {
+    "/api/v1/public/bookings/confirm-link": {
       "post": {
-        "operationId": "PublicBookingController_confirm",
+        "operationId": "PublicBookingController_confirmLink",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Подтвердить запись по одноразовой ссылке из сообщения",
+        "tags": [
+          "availability",
+          "appointments"
+        ]
+      }
+    },
+    "/api/v1/public/bookings/{id}/status": {
+      "post": {
+        "operationId": "PublicBookingController_holdStatus",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
             "schema": {
               "type": "string"
             }
@@ -2298,7 +2316,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConfirmDto"
+                "$ref": "#/components/schemas/HoldTokenDto"
               }
             }
           }
@@ -2308,14 +2326,14 @@
             "description": ""
           }
         },
-        "summary": "Подтвердить запись кодом OTP",
+        "summary": "Состояние резерва: страница записи ждёт перехода по ссылке",
         "tags": [
           "availability",
           "appointments"
         ]
       }
     },
-    "/api/v1/public/bookings/{id}/resend-otp": {
+    "/api/v1/public/bookings/{id}/resend-link": {
       "post": {
         "operationId": "PublicBookingController_resend",
         "parameters": [
@@ -2343,7 +2361,7 @@
             "description": ""
           }
         },
-        "summary": "Повторно отправить OTP (с ограничением частоты)",
+        "summary": "Отправить новую ссылку подтверждения (прежняя перестаёт действовать)",
         "tags": [
           "availability",
           "appointments"
@@ -6504,6 +6522,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6537,6 +6563,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6582,6 +6616,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6696,22 +6738,17 @@
           "consents"
         ]
       },
-      "ConfirmDto": {
+      "ConfirmLinkDto": {
         "type": "object",
         "properties": {
           "token": {
             "type": "string",
-            "minLength": 20,
+            "minLength": 40,
             "maxLength": 200
-          },
-          "code": {
-            "type": "string",
-            "pattern": "^\\d{6}$"
           }
         },
         "required": [
-          "token",
-          "code"
+          "token"
         ]
       },
       "HoldTokenDto": {
@@ -6752,6 +6789,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6803,6 +6848,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6876,6 +6929,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -6920,6 +6981,14 @@
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "nullable": true
+                },
+                "seats": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                },
+                "together": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -7062,6 +7131,24 @@
           "dateTo",
           "client",
           "consents"
+        ]
+      },
+      "ConfirmDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        },
+        "required": [
+          "token",
+          "code"
         ]
       },
       "TokenDto": {

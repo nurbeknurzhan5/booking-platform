@@ -82,6 +82,9 @@ export interface AppointmentView {
     startAt: string;
     endAt: string;
     durationMinutes: number;
+    /** Групповая бронь (D-41): число мест и их названия (ПК 1, ПК 2…). */
+    seats?: number;
+    places?: string[];
     basePrice: number;
     saleDiscount: number;
     promoDiscount: number;

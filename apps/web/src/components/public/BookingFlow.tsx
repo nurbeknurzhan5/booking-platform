@@ -18,6 +18,8 @@ interface HoldResponse {
   holdToken: string;
   holdExpiresAt: string;
   otpExpiresAt: string;
+  /** Тестовая среда: сообщения складываются в «Тестовый телефон» вместо WhatsApp. */
+  testInbox?: boolean;
   appointment: AppointmentView;
 }
 interface WaitlistJoin {
@@ -52,6 +54,9 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
   const [specialist, setSpecialist] = useState<string | null>(initialSpecialistId ?? null);
   const [slot, setSlot] = useState<Slot | null>(null);
   const [date, setDate] = useState<string | null>(null);
+  // Групповая бронь мест (D-41): число мест и «места рядом»
+  const [seats, setSeats] = useState(1);
+  const [together, setTogether] = useState(true);
   const [reloadSlots, setReloadSlots] = useState(0);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -67,7 +72,8 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
   const [quote, setQuote] = useState<Quote | null>(null);
   const [hold, setHold] = useState<HoldResponse | null>(null);
   const [code, setCode] = useState('');
-  const [done, setDone] = useState<{ appointment: AppointmentView; manageToken: string } | null>(null);
+  const [done, setDone] = useState<{ appointment: AppointmentView; manageToken: string | null } | null>(null);
+  const [resent, setResent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [wlFrom, setWlFrom] = useState(() => localISODate(data.branch.timezone));
@@ -84,8 +90,13 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
 
   // выбранный мастер — для услуг, которые он оказывает; остальные услуги — «любой свободный»
   const items = useMemo(
-    () => selected.map((serviceId) => ({ serviceId, specialistId: specialist && data.specialists.some((x) => x.id === specialist && x.serviceIds.includes(serviceId)) ? specialist : null })),
-    [selected, specialist, data.specialists],
+    () =>
+      selected.map((serviceId) => ({
+        serviceId,
+        specialistId: specialist && data.specialists.some((x) => x.id === specialist && x.serviceIds.includes(serviceId)) ? specialist : null,
+        ...(seats > 1 ? { seats, together } : {}),
+      })),
+    [selected, specialist, data.specialists, seats, together],
   );
 
   useEffect(() => {
@@ -137,36 +148,43 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     }
   }
 
-  async function confirm() {
-    if (!hold) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const r = await api<{ appointment: AppointmentView; manageToken: string }>(`/public/bookings/${hold.appointmentId}/confirm`, {
-        method: 'POST',
-        idempotencyKey: `confirm-${hold.appointmentId}-${code}`,
-        body: { holdToken: hold.holdToken, code },
-      });
-      setDone(r);
-      setStep('done');
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'HOLD_EXPIRED') {
-        setHold(null);
-        setSlot(null);
-        setReloadSlots((n) => n + 1);
-        setStep('select');
+  // Подтверждение по ссылке (D-42): клиент открывает ссылку из сообщения (на этом или другом устройстве),
+  // страница записи раз в 3 секунды спрашивает состояние резерва и показывает результат.
+  useEffect(() => {
+    if (step !== 'otp' || !hold) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const r = await api<{ status: string }>(`/public/bookings/${hold.appointmentId}/status`, { method: 'POST', body: { holdToken: hold.holdToken } });
+        if (!alive) return;
+        if (r.status === 'confirmed') {
+          setDone({ appointment: { ...hold.appointment, status: 'confirmed', hold: null }, manageToken: null });
+          setStep('done');
+        } else if (r.status !== 'pending_otp') {
+          setHold(null);
+          setSlot(null);
+          setReloadSlots((n) => n + 1);
+          setStep('select');
+          setError(t('holdExpired'));
+        }
+      } catch {
+        /* сеть: попробуем на следующем тике */
       }
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+    };
+    const id = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [step, hold?.appointmentId]);
 
   async function resend() {
     if (!hold) return;
     setError(null);
+    setResent(false);
     try {
-      await api(`/public/bookings/${hold.appointmentId}/resend-otp`, { method: 'POST', body: { holdToken: hold.holdToken } });
+      await api(`/public/bookings/${hold.appointmentId}/resend-link`, { method: 'POST', body: { holdToken: hold.holdToken } });
+      setResent(true);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -303,6 +321,11 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
             onSlotChange={setSlot}
             date={date}
             onDateChange={setDate}
+            items={items}
+            seats={seats}
+            onSeatsChange={setSeats}
+            together={together}
+            onTogetherChange={setTogether}
             reloadToken={reloadSlots}
             quote={quote}
             onContinue={() => {
@@ -468,46 +491,54 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
             <Summary />
             <div className="mt-4 flex gap-2">
               <button type="button" onClick={() => setStep('select')} className="tpl-surface tpl-border flex-1 rounded-xl border py-3">{t('back')}</button>
-              <button type="submit" disabled={busy || !consentPd} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="get-code">{t('getCode')}</button>
+              <button type="submit" disabled={busy || !consentPd} className="tpl-btn flex-1 rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="get-code">{t('getLink')}</button>
             </div>
           </form>
         )}
 
         {step === 'otp' && hold && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void confirm();
-            }}
-          >
-            <h1 className="mb-2 text-xl font-semibold">{t('step5')}</h1>
-            <p className="tpl-muted mb-4 text-sm">{t('codeSent')} {hold.appointment.client.phone}</p>
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="••••••"
-              aria-label={t('code')}
-              className="tpl-surface tpl-border w-full rounded-xl border px-4 py-3 text-center font-mono text-2xl tracking-[0.5em]"
-              data-testid="otp"
-            />
-            <p className={`mt-3 text-center text-sm ${holdLeft < 60 ? 'text-rose-600' : 'tpl-muted'}`}>
-              {holdLeft > 0 ? `${t('holdLeft')}: ${Math.floor(holdLeft / 60)}:${String(holdLeft % 60).padStart(2, '0')}` : t('holdExpired')}
+          <section data-testid="link-sent">
+            <h1 className="mb-2 text-xl font-semibold">{t('linkSentTitle')}</h1>
+            <p className="mb-1 text-sm">
+              {t('linkSent')} <b>{hold.appointment.client.phone}</b>
             </p>
+            <p className="tpl-muted mb-4 text-sm">{t('linkSentHint')}</p>
+            {hold.testInbox && (
+              <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" data-testid="test-mode">
+                <b>{t('testModeTitle')}.</b> {t('testModeText')}{' '}
+                <a href={`/dev/phone?phone=${encodeURIComponent(hold.appointment.client.phone)}`} target="_blank" rel="noreferrer" className="font-semibold underline" data-testid="open-test-phone">
+                  {t('openTestPhone')} ↗
+                </a>
+              </div>
+            )}
+            <div className="tpl-soft tpl-r flex items-center gap-3 p-4 text-sm">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--tpl-primary)] opacity-60" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--tpl-primary)]" />
+              </span>
+              <span className="flex-1">{t('waitingConfirm')}</span>
+              <span className={holdLeft < 60 ? 'text-rose-600' : 'tpl-muted'}>
+                {holdLeft > 0 ? `${Math.floor(holdLeft / 60)}:${String(holdLeft % 60).padStart(2, '0')}` : t('holdExpired')}
+              </span>
+            </div>
             <div className="tpl-surface tpl-border mt-4 rounded-xl border p-3 text-sm">
               <div>{dateTime(hold.appointment.startAt, data.branch.timezone, lang)}</div>
               {hold.appointment.items.map((i) => (
-                <div key={i.id} className="tpl-muted">{i.serviceName}{i.specialistName ? ` · ${i.specialistName}` : ''}</div>
+                <div key={i.id} className="tpl-muted">
+                  {i.serviceName}
+                  {i.seats && i.seats > 1 ? ` × ${i.seats}` : ''}
+                  {i.specialistName ? ` · ${i.specialistName}` : ''}
+                  {i.places?.length ? ` · ${i.places.join(', ')}` : ''}
+                </div>
               ))}
               <div className="mt-1 font-semibold">{t('total')}: {money(hold.appointment.price.total)}</div>
             </div>
-            <button type="submit" disabled={busy || code.length !== 6 || holdLeft === 0} className="tpl-btn mt-4 w-full rounded-xl py-3 font-semibold disabled:opacity-40" data-testid="confirm">{t('confirm')}</button>
+            {resent && <p className="tpl-muted mt-3 text-sm">{t('linkResent')}</p>}
             <div className="mt-3 flex justify-between text-sm">
-              <button type="button" onClick={() => void resend()} className="tpl-primary underline">{t('resend')}</button>
+              <button type="button" onClick={() => void resend()} className="tpl-primary underline" data-testid="resend-link">{t('resendLink')}</button>
               {hold.appointment.hold?.extensionCount === 0 && <button type="button" onClick={() => void extend()} className="tpl-primary underline">{t('extend')}</button>}
             </div>
-          </form>
+          </section>
         )}
 
         {step === 'done' && done && (
@@ -522,7 +553,11 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
               ))}
               <div className="mt-1 font-semibold">{money(done.appointment.price.total)}</div>
             </div>
-            <Link href={`/${lang}/manage/${done.manageToken}`} className="tpl-btn mt-5 inline-block rounded-xl px-6 py-3 font-semibold" data-testid="manage-link">{t('manageLink')}</Link>
+            {done.manageToken ? (
+              <Link href={`/${lang}/manage/${done.manageToken}`} className="tpl-btn mt-5 inline-block rounded-xl px-6 py-3 font-semibold" data-testid="manage-link">{t('manageLink')}</Link>
+            ) : (
+              <p className="tpl-muted mt-4 text-sm" data-testid="manage-in-message">{t('manageInMessage')}</p>
+            )}
           </section>
         )}
       </div>

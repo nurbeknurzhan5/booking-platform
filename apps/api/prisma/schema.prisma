@@ -879,6 +879,8 @@ model AppointmentItem {
   durationMinutes        Int      @map("duration_minutes")
   bufferBeforeMinutes    Int      @map("buffer_before_minutes")
   bufferAfterMinutes     Int      @map("buffer_after_minutes")
+  /// Групповая бронь мест (D-41): сколько мест (ПК, консолей) занимает позиция; цена = цена услуги × места.
+  seats                  Int      @default(1) @db.SmallInt
   serviceNameSnapshot    String   @map("service_name_snapshot") @db.VarChar(200)
   specialistNameSnapshot String?  @map("specialist_name_snapshot") @db.VarChar(200)
   basePrice              Int      @map("base_price")

@@ -158,11 +158,16 @@ export class AdminNotificationsController {
 export class DevInboxController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * «Тестовый телефон» вместо WhatsApp на время разработки: без phone — последние сообщения всем номерам.
+   * В production недоступно (и канал dev_inbox там запрещён).
+   */
   @Get('inbox')
-  inbox(@Query('phone') phone: string) {
+  inbox(@Query('phone') phone?: string) {
     if (getConfig().APP_ENV === 'production') throw AppError.notFound();
-    const p = normalizePhone(phone ?? '');
-    if (!p) throw AppError.badRequest('VALIDATION_ERROR', 'phone required');
+    if (!phone) return this.prisma.devInboxMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+    const p = normalizePhone(phone);
+    if (!p) throw AppError.badRequest('VALIDATION_ERROR', 'Неверный номер');
     return this.prisma.devInboxMessage.findMany({ where: { recipient: p }, orderBy: { createdAt: 'desc' }, take: 20 });
   }
 }

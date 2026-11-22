@@ -49,7 +49,8 @@ npm run dev:web      # http://localhost:3000
 - администратор филиала: `admin@demo.kz` / `DemoAdmin12345`;
 - компьютерный клуб «Пиксель» (ПК, VIP-ПК, залы PlayStation 5): http://localhost:3000/ru/b/demo-club, владелец `club@demo.kz` / `DemoOwner12345`;
 - банный комплекс «Тёплый берег» (финская сауна, русская баня, хаммам, пармейстер): http://localhost:3000/ru/b/demo-sauna, владелец `sauna@demo.kz` / `DemoOwner12345`;
-- в разработке коды OTP приходят в канал `dev_inbox`: `GET /api/v1/dev/inbox?phone=+7701…` (в production канал запрещён);
+- **«Тестовый телефон»** — http://localhost:3000/dev/phone: пока WhatsApp не подключён, все сообщения клиентам (ссылки подтверждения записи, коды входа в кабинет, напоминания) показываются здесь, ссылки кликабельны. API: `GET /api/v1/dev/inbox[?phone=+7701…]`. В production недоступно;
+- карта 2ГИС: с ключом `NEXT_PUBLIC_2GIS_KEY` — официальная MapGL; без ключа локально показывается временная карта на тайлах 2ГИС, в production — только кнопки «Открыть в 2GIS» и «Маршрут»;
 - вернуть dev-базу к чистым демо-данным: `npm run db:reset:dev -w @booking/api -- --yes`. Команда удаляет все данные, кроме учётных записей суперадминистраторов (пароль и MFA сохраняются). В production запрещена.
 
 ## Проверки
@@ -73,7 +74,7 @@ node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | архитектура, изоляция, ядро бронирования, outbox |
 | [DECISIONS.md](docs/DECISIONS.md) | утверждённые и предложенные решения, что нужно от заказчика |
 | [ERD.md](docs/ERD.md) | модель данных, ограничения, индексы, правила удаления |
-| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 169 операций |
+| [API.md](docs/API.md), [API-endpoints.md](docs/API-endpoints.md), [openapi.json](docs/openapi.json) | соглашения, права, лимиты, ошибки, 170 операций |
 | [SECURITY.md](docs/SECURITY.md) | меры безопасности и что проверить до запуска |
 | [ANALYTICS.md](docs/ANALYTICS.md) | правила подсчёта, атрибуция, боты, внутренние просмотры |
 | [TESTING.md](docs/TESTING.md) | тесты, конкурентные и нагрузочные результаты |

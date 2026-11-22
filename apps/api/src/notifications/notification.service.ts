@@ -43,6 +43,9 @@ const REPLY_TYPES: ReadonlySet<NotificationType> = new Set(['whatsapp_auto_reply
  * Постановка уведомлений в Outbox. Вызывается в транзакции бизнес-операции,
  * поэтому событие и сообщения фиксируются атомарно вместе с изменением данных.
  */
+/** Одноразовые сообщения (код или ссылка подтверждения): канал как у OTP, без настроек организации и согласий на рассылки. */
+export const ONE_TIME_TYPES: ReadonlySet<string> = new Set(['otp', 'booking_link']);
+
 @Injectable()
 export class NotificationService {
   constructor(
@@ -75,7 +78,7 @@ export class NotificationService {
     }
     if (enabled.includes('dev_inbox')) return 'dev_inbox';
     if (REPLY_TYPES.has(type)) return enabled.includes('whatsapp') ? 'whatsapp' : null;
-    if (type === 'otp') {
+    if (ONE_TIME_TYPES.has(type)) {
       const order = getConfig().OTP_CHANNELS.length ? getConfig().OTP_CHANNELS : ['whatsapp', 'sms'];
       return (order.find((c) => enabled.includes(c as NotificationChannel)) as NotificationChannel | undefined) ?? null;
     }
@@ -112,7 +115,7 @@ export class NotificationService {
    */
   async enqueue(tx: Tx, args: EnqueueArgs): Promise<string | null> {
     // Для OTP настройки организации не влияют на канал — лишний запрос не нужен (OTP создаётся под блокировкой филиала).
-    const noOrgSettings = args.type === 'otp' || REPLY_TYPES.has(args.type);
+    const noOrgSettings = ONE_TIME_TYPES.has(args.type) || REPLY_TYPES.has(args.type);
     const orgSettings = noOrgSettings ? DEFAULT_NOTIFICATION_SETTINGS : await this.orgNotificationSettings(tx, args.organizationId);
     if (args.type === 'appointment_reminder' && !orgSettings.reminderEnabled) return null;
     if (args.type === 'review_request' && !orgSettings.reviewRequestEnabled) return null;
@@ -154,7 +157,7 @@ export class NotificationService {
         payload,
         payloadEncrypted: !!args.sensitive,
         dedupeKey,
-        maxAttempts: args.type === 'otp' ? 3 : s.notificationMaxAttempts,
+        maxAttempts: ONE_TIME_TYPES.has(args.type) ? 3 : s.notificationMaxAttempts,
         expiresAt: args.expiresAt ?? null,
       },
     });

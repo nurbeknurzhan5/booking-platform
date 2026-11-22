@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { confirmViaTestPhone } from './link';
 
 /**
  * Полный сценарий клиента (ТЗ §26.3):
@@ -12,17 +13,6 @@ function uniquePhone(): string {
   return `+7705${n}`;
 }
 
-async function otpFor(page: Page, phone: string): Promise<string> {
-  // OTP доставляется воркером в канал dev_inbox (только dev/test, запрещён в production).
-  for (let i = 0; i < 40; i++) {
-    const r = await page.request.get(`/api/v1/dev/inbox?phone=${encodeURIComponent(phone)}`);
-    const list = (await r.json()) as Array<{ type: string; text: string }>;
-    const otp = list.find((m) => m.type === 'otp');
-    if (otp) return /(\d{6})/.exec(otp.text)![1]!;
-    await page.waitForTimeout(500);
-  }
-  throw new Error('OTP not delivered');
-}
 
 async function noHorizontalScroll(page: Page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -68,32 +58,37 @@ test('клиент записывается, переносит и отменя�
   await page.waitForTimeout(1600); // антибот: форма не может быть отправлена мгновенно
   await page.getByTestId('get-code').click();
 
-  // 6–7. OTP из тестовой среды и подтверждение
-  await expect(page.getByTestId('otp')).toBeVisible();
-  const code = await otpFor(page, phone);
-  await page.getByTestId('otp').fill(code);
-  await page.getByTestId('confirm').click();
+  // 6–7. Ссылка подтверждения приходит в «Тестовый телефон» (WhatsApp не подключён); клиент открывает её
+  const confirmPage = await confirmViaTestPhone(page, phone);
+  await expect(confirmPage.getByTestId('confirm-ok')).toContainText(chosenTime);
+  const manageHref = (await confirmPage.getByTestId('manage-link').getAttribute('href'))!;
+  // повторный переход по той же ссылке запись не трогает
+  await confirmPage.reload();
+  await expect(confirmPage.getByTestId('confirm-error')).toBeVisible();
 
-  // 8. Подтверждённая запись
+  // 8. Страница записи сама узнала о подтверждении
   await expect(page.getByTestId('booking-done')).toBeVisible();
   await expect(page.getByTestId('booking-done')).toContainText(chosenTime);
-  await page.getByTestId('manage-link').click();
-  await expect(page.getByTestId('appointment-status')).toHaveText('Подтверждена');
+  await expect(page.getByTestId('manage-in-message')).toBeVisible();
+  await confirmPage.goto(manageHref);
+  await page.close();
+  const managePage = confirmPage;
+  await expect(managePage.getByTestId('appointment-status')).toHaveText('Подтверждена');
 
   // 9. Перенос: другая дата
-  await page.getByTestId('reschedule').click();
-  await page.locator('[data-testid^="date-"]').nth(2).click();
-  const newSlot = page.getByTestId('slot').nth(2);
+  await managePage.getByTestId('reschedule').click();
+  await managePage.locator('[data-testid^="date-"]').nth(2).click();
+  const newSlot = managePage.getByTestId('slot').nth(2);
   await expect(newSlot).toBeVisible();
   const newTime = (await newSlot.textContent())!.trim();
   await newSlot.click();
-  await expect(page.getByTestId('appointment-time')).toContainText(newTime);
-  await expect(page.getByTestId('appointment-status')).toHaveText('Подтверждена');
+  await expect(managePage.getByTestId('appointment-time')).toContainText(newTime);
+  await expect(managePage.getByTestId('appointment-status')).toHaveText('Подтверждена');
 
   // 10. Отмена
-  page.once('dialog', (d) => d.accept());
-  await page.getByTestId('cancel').click();
-  await expect(page.getByTestId('appointment-status')).toHaveText('Отменена вами');
+  managePage.once('dialog', (d) => d.accept());
+  await managePage.getByTestId('cancel').click();
+  await expect(managePage.getByTestId('appointment-status')).toHaveText('Отменена вами');
 });
 
 test('запись на одной странице: мастер сужает услуги, услуга — мастеров, у дней и мастеров видно число окон', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { API, bootstrapTestApp, createSuperadmin, Http, loginSuperadmin, resetDb, type TestContext } from './helpers';
-import { bookAndConfirm, createBookableBranch, drainNotifications, futureDate, localTime, nextPhone, type BookableBranch } from './fixtures';
+import { bookAndConfirm, createBookableBranch, drainNotifications, futureDate, linkTokenFor, localTime, nextPhone, type BookableBranch } from './fixtures';
 import { BookingService } from '../src/booking/booking.service';
 import { NotificationService } from '../src/notifications/notification.service';
 
@@ -69,6 +69,46 @@ describe('Этап 4: онлайн-запись', () => {
     });
   });
 
+  describe('групповая бронь мест (D-41)', () => {
+    /** Ряд из 4 ПК и услуга «ПК · 1 час» без специалиста. */
+    async function pcRow() {
+      const org = b.orgId;
+      const svc = await ctx.prisma.service.create({ data: { organizationId: org, name: 'ПК · 1 час', price: 1000, durationMinutes: 60, requiresSpecialist: false } });
+      await ctx.prisma.branchService.create({ data: { organizationId: org, branchId: b.branchId, serviceId: svc.id } });
+      await ctx.prisma.serviceResource.create({ data: { organizationId: org, serviceId: svc.id, resourceType: 'equipment', quantity: 1 } });
+      for (let n = 1; n <= 4; n++) {
+        const r = await ctx.prisma.resource.create({ data: { organizationId: org, branchId: b.branchId, type: 'equipment', name: `ПК ${n}`, sortOrder: n, isPublic: true } });
+        await ctx.prisma.resourceService.create({ data: { organizationId: org, resourceId: r.id, serviceId: svc.id } });
+      }
+      return svc.id;
+    }
+    const av = (items: object[]) => new Http(ctx.app).post(`${API}/public/branches/${b.slug}/availability`, { date, items });
+    const at10 = new Date(localTime(date, '10:00')).toISOString();
+
+    it('три места рядом: одна запись, цена × 3, места подряд; остаток ряда учитывается', async () => {
+      const pc = await pcRow();
+      const quote = await new Http(ctx.app).post(`${API}/public/branches/${b.slug}/quote`, { items: [{ serviceId: pc, seats: 3, together: true }] });
+      expect(quote.body.totalPrice).toBe(3000);
+      const { confirm } = await bookAndConfirm(ctx, b.slug, { startAt: localTime(date, '10:00'), items: [{ serviceId: pc, seats: 3, together: true }] });
+      expect(confirm?.status).toBe(200);
+      const item = confirm!.body.appointment.items[0];
+      expect(item.seats).toBe(3);
+      expect(item.places).toEqual(['ПК 1', 'ПК 2', 'ПК 3']);
+      expect(confirm!.body.appointment.price.total).toBe(3000);
+
+      // в 10:00 остался один ПК: двое рядом не сядут, один — сядет
+      expect((await av([{ serviceId: pc, seats: 2, together: true }])).body.slots.map((s: { startAt: string }) => s.startAt)).not.toContain(at10);
+      expect((await av([{ serviceId: pc, seats: 1 }])).body.slots.map((s: { startAt: string }) => s.startAt)).toContain(at10);
+      // 5 мест в ряду из 4 не бывает
+      expect((await av([{ serviceId: pc, seats: 5 }])).body.slots).toHaveLength(0);
+    });
+
+    it('несколько мест нельзя выбрать для услуги со специалистом', async () => {
+      const r = await av([{ serviceId: b.services.haircut, seats: 2 }]);
+      expect(r.status).toBe(400);
+    });
+  });
+
   describe('запись на одной странице: обзор доступности', () => {
     const overview = (items: Array<{ serviceId: string; specialistId?: string | null }>, d = date) =>
       new Http(ctx.app).post(`${API}/public/branches/${b.slug}/availability/overview`, { date: d, items });
@@ -130,12 +170,15 @@ describe('Этап 4: онлайн-запись', () => {
       expect(confirm!.body.appointment.price.total).toBe(5000);
       expect(confirm!.body.manageToken).toBeTruthy();
 
-      // OTP хранится только в виде хэша, payload outbox стёрт после отправки
+      // Секрет ссылки хранится только в виде HMAC, payload outbox стёрт после отправки (D-42)
       const otp = await ctx.prisma.otpCode.findFirstOrThrow({ where: { phone } });
       expect(otp.codeHash).toHaveLength(64);
       expect(otp.consumedAt).not.toBeNull();
-      const otpOutbox = await ctx.prisma.notificationOutbox.findFirstOrThrow({ where: { recipient: phone, type: 'otp' } });
-      expect(otpOutbox.payload).toEqual({});
+      const linkOutbox = await ctx.prisma.notificationOutbox.findFirstOrThrow({ where: { recipient: phone, type: 'booking_link' } });
+      expect(linkOutbox.payload).toEqual({});
+      const linkMsg = await ctx.prisma.devInboxMessage.findFirstOrThrow({ where: { recipient: phone, type: 'booking_link' } });
+      expect(linkMsg.text).toMatch(/\/ru\/confirm\/[0-9a-f-]{36}\.[A-Za-z0-9_-]{32}/);
+      expect(linkMsg.text).not.toMatch(/\b\d{6}\b/);
 
       await drainNotifications(ctx);
       const confirmMsg = await ctx.prisma.devInboxMessage.findFirstOrThrow({ where: { recipient: phone, type: 'appointment_confirmed' } });
@@ -171,29 +214,57 @@ describe('Этап 4: онлайн-запись', () => {
       expect(row!.hold_left).toBeLessThanOrEqual(5 * 60);
     });
 
-    it('неверный OTP: попытки ограничены, затем код недействителен; повтор подтверждения невозможен', async () => {
+    it('ссылка подтверждения: одноразовая, уникальная при каждой отправке, подбор секрета ограничен (D-42)', async () => {
       const http = new Http(ctx.app);
       const phone = nextPhone();
       const hold = await http.post(`${API}/public/branches/${b.slug}/bookings`, holdBody(localTime(date, '12:00'), [{ serviceId: b.services.haircut }], phone));
-      const url = `${API}/public/bookings/${hold.body.appointmentId}/confirm`;
-      for (let i = 0; i < 4; i++) {
-        const r = await http.post(url, { holdToken: hold.body.holdToken, code: '000000' });
-        expect(r.body.error.code).toBe('OTP_INVALID');
-      }
-      const last = await http.post(url, { holdToken: hold.body.holdToken, code: '000000' });
-      expect(last.body.error.code).toBe('OTP_ATTEMPTS_EXCEEDED');
+      expect(hold.status).toBe(201);
+      expect(hold.body.testInbox).toBe(true);
       await drainNotifications(ctx);
-      const msg = await ctx.prisma.devInboxMessage.findFirstOrThrow({ where: { recipient: phone, type: 'otp' } });
-      const code = /(\d{6})/.exec(msg.text)![1]!;
-      const afterLock = await http.post(url, { holdToken: hold.body.holdToken, code });
-      expect(afterLock.body.error.code).toBe('OTP_INVALID'); // код аннулирован
+      const first = await linkTokenFor(ctx, phone);
+      const [id] = first.split('.');
+      const confirmUrl = `${API}/public/bookings/confirm-link`;
+
+      // страница записи ждёт: резерв ещё не подтверждён
+      const pending = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/status`, { holdToken: hold.body.holdToken });
+      expect(pending.body.status).toBe('pending_otp');
+
+      // повторная отправка — новая ссылка, прежняя перестаёт действовать
+      await ctx.prisma.otpCode.updateMany({ where: { phone }, data: { createdAt: new Date(Date.now() - 3600_000) } });
+      const resend = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/resend-link`, { holdToken: hold.body.holdToken });
+      expect(resend.status).toBe(200);
+      await drainNotifications(ctx);
+      const second = await linkTokenFor(ctx, phone);
+      expect(second).not.toBe(first);
+      expect((await http.post(confirmUrl, { token: first })).body.error.code).toBe('OTP_INVALID');
+
+      // подбор секрета к чужому id: попытки ограничены, после блокировки не помогает и верный секрет
+      const [id2, secret2] = second.split('.');
+      for (let i = 0; i < 4; i++) expect((await http.post(confirmUrl, { token: `${id2}.${'A'.repeat(32)}` })).body.error.code).toBe('OTP_INVALID');
+      expect((await http.post(confirmUrl, { token: `${id2}.${'B'.repeat(32)}` })).body.error.code).toBe('OTP_INVALID');
+      expect((await http.post(confirmUrl, { token: `${id2}.${secret2}` })).body.error.code).toBe('OTP_ATTEMPTS_EXCEEDED');
+      expect(id).not.toBe(id2);
+
+      // новая ссылка → подтверждение; повторный переход по ней не срабатывает
+      await ctx.prisma.otpCode.updateMany({ where: { phone }, data: { createdAt: new Date(Date.now() - 3600_000) } });
+      await http.post(`${API}/public/bookings/${hold.body.appointmentId}/resend-link`, { holdToken: hold.body.holdToken });
+      await drainNotifications(ctx);
+      const third = await linkTokenFor(ctx, phone);
+      const ok = await http.post(confirmUrl, { token: third });
+      expect(ok.status).toBe(200);
+      expect(ok.body.appointment.status).toBe('confirmed');
+      expect(ok.body.manageToken).toBeTruthy();
+      expect((await http.post(confirmUrl, { token: third })).body.error.code).toBe('OTP_USED');
+      const done = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/status`, { holdToken: hold.body.holdToken });
+      expect(done.body.status).toBe('confirmed');
     });
 
-    it('неверный holdToken не раскрывает запись', async () => {
+    it('неверный holdToken не раскрывает резерв', async () => {
       const http = new Http(ctx.app);
       const hold = await http.post(`${API}/public/branches/${b.slug}/bookings`, holdBody(localTime(date, '12:00'), [{ serviceId: b.services.haircut }]));
-      const r = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/confirm`, { holdToken: 'x'.repeat(43), code: '123456' });
+      const r = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/status`, { holdToken: 'x'.repeat(43) });
       expect(r.status).toBe(404);
+      expect((await http.post(`${API}/public/bookings/confirm-link`, { token: `${hold.body.appointmentId}.${'x'.repeat(32)}` })).body.error.code).toBe('OTP_INVALID');
     });
 
     it('частота отправки OTP ограничена (повторный резерв на тот же номер сразу)', async () => {
@@ -277,7 +348,8 @@ describe('Этап 4: онлайн-запись', () => {
     it('истёкший резерв освобождается воркером: expired_otp, слот снова доступен, подтверждение невозможно', async () => {
       const http = new Http(ctx.app);
       const startAt = localTime(date, '13:00');
-      const hold = await http.post(`${API}/public/branches/${b.slug}/bookings`, holdBody(startAt, [{ serviceId: b.services.haircut, specialistId: b.specialists.anna }]));
+      const phone = nextPhone();
+      const hold = await http.post(`${API}/public/branches/${b.slug}/bookings`, holdBody(startAt, [{ serviceId: b.services.haircut, specialistId: b.specialists.anna }], phone));
       expect(hold.status).toBe(201);
       await ctx.prisma.bookingHold.update({ where: { appointmentId: hold.body.appointmentId }, data: { expiresAt: new Date(Date.now() - 1000) } });
 
@@ -289,8 +361,10 @@ describe('Этап 4: онлайн-запись', () => {
       expect(released).toBe(1);
       const a = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: hold.body.appointmentId } });
       expect(a.status).toBe('expired_otp');
-      const confirm = await http.post(`${API}/public/bookings/${hold.body.appointmentId}/confirm`, { holdToken: hold.body.holdToken, code: '123456' });
-      expect(confirm.body.error.code).toBe('HOLD_EXPIRED');
+      // ссылка, открытая после истечения резерва, запись не подтверждает
+      await drainNotifications(ctx);
+      const confirm = await http.post(`${API}/public/bookings/confirm-link`, { token: await linkTokenFor(ctx, phone) });
+      expect(['HOLD_EXPIRED', 'OTP_INVALID', 'OTP_EXPIRED']).toContain(confirm.body.error.code);
 
       // другой клиент занимает освободившийся слот
       const again = await bookAndConfirm(ctx, b.slug, { startAt, items: [{ serviceId: b.services.haircut, specialistId: b.specialists.anna }] });

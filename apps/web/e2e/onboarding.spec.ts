@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { OWNER_STATE } from './global-setup';
 import { csrfHeader, ownerOrgId } from './owner';
+import { confirmViaTestPhone } from './link';
 
 /**
  * Путь владельца целиком через интерфейс (ТЗ §3.3, §4–8, §13):
@@ -10,15 +11,6 @@ import { csrfHeader, ownerOrgId } from './owner';
 test.use({ storageState: OWNER_STATE });
 const API = '/api/v1';
 
-async function otpFor(page: Page, phone: string): Promise<string> {
-  for (let i = 0; i < 40; i++) {
-    const list = (await (await page.request.get(`${API}/dev/inbox?phone=${encodeURIComponent(phone)}`)).json()) as Array<{ type: string; text: string }>;
-    const otp = list.find((m) => m.type === 'otp');
-    if (otp) return /(\d{6})/.exec(otp.text)![1]!;
-    await page.waitForTimeout(500);
-  }
-  throw new Error('OTP not delivered');
-}
 
 /** Архивирует филиалы, оставшиеся от прерванных прогонов (slug начинается с e2e-onb-). */
 async function cleanupLeftovers(page: Page, orgId: string) {
@@ -115,6 +107,8 @@ test('владелец настраивает новый филиал с нул�
   await cp.goto(`/ru/b/${slug}`);
   await expect(cp.getByRole('heading', { level: 1 })).toContainText(branchName);
   await cp.getByTestId('book-button').first().click();
+  await expect(cp).toHaveURL(new RegExp(`/ru/b/${slug}/book`));
+  await expect(cp.getByTestId('pick-service-first')).toBeVisible();
   await cp.getByText(serviceName).click();
   await cp.getByRole('button', { name: new RegExp(masterName) }).click();
   await cp.locator('[data-testid^="date-"]').nth(1).click();
@@ -125,9 +119,7 @@ test('владелец настраивает новый филиал с нул�
   await cp.getByTestId('consent').check();
   await cp.waitForTimeout(1600);
   await cp.getByTestId('get-code').click();
-  await expect(cp.getByTestId('otp')).toBeVisible();
-  await cp.getByTestId('otp').fill(await otpFor(cp, phone));
-  await cp.getByTestId('confirm').click();
+  await confirmViaTestPhone(cp, phone);
   await expect(cp.getByTestId('booking-done')).toBeVisible();
   await expect(cp.getByTestId('booking-done')).toContainText(serviceName);
   await client.close();

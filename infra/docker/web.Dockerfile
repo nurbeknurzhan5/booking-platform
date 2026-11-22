@@ -10,7 +10,8 @@ RUN npm ci --workspace @booking/web --workspace @booking/shared --include-worksp
 
 FROM deps AS build
 ARG NEXT_PUBLIC_2GIS_KEY=""
-ENV NEXT_PUBLIC_2GIS_KEY=$NEXT_PUBLIC_2GIS_KEY NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_APP_ENV=production отключает временную карту без ключа и другие инструменты разработки
+ENV NEXT_PUBLIC_2GIS_KEY=$NEXT_PUBLIC_2GIS_KEY NEXT_PUBLIC_APP_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY packages/shared packages/shared
 COPY apps/web apps/web
 RUN npm run build -w @booking/shared && npm run build -w @booking/web
