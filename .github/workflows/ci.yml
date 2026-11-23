@@ -1,0 +1,63 @@
+# Проверки при каждом push в main и pull request: линтер, типы, unit и integration-тесты на PostgreSQL 17, сборка.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Линтер, типы, тесты, сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: booking_app
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: booking_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U booking_app"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      APP_ENV: test
+      # Тесты используют только TEST_DATABASE_URL; DATABASE_URL обязан отличаться (защита от запуска на рабочей базе)
+      DATABASE_URL: postgresql://booking_app:ci_only_password@localhost:5432/booking_unused?schema=public
+      TEST_DATABASE_URL: postgresql://booking_app:ci_only_password@localhost:5432/booking_test?schema=public
+      NOTIFICATION_CHANNELS: dev_inbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Одноразовые секреты для тестов
+        run: |
+          for k in OTP_HMAC_SECRET ENCRYPTION_KEY ANALYTICS_SECRET; do
+            echo "$k=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")" >> "$GITHUB_ENV"
+          done
+      - run: npm ci --no-audit --no-fund
+      - name: Общий пакет и клиент Prisma
+        run: |
+          npm run build -w @booking/shared
+          (cd apps/api && npx prisma generate)
+      - run: npm run lint
+      # Сборка до проверки типов: next build создаёт next-env.d.ts (типы Next для css и изображений)
+      - name: Сборка API и сайта
+        run: |
+          npm run build -w @booking/api
+          npm run build -w @booking/web
+      - run: npm run typecheck
+      - name: Unit и integration-тесты
+        run: npm test

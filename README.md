@@ -2,7 +2,7 @@
 
 Multi-tenant платформа для салонов красоты, барбершопов, массажа, бань, автомоек, детейлинга, автосервисов и других сервисных организаций. В ней есть:
 - организации, филиалы, услуги, специалисты и ресурсы, расписания;
-- онлайн-запись с OTP и защитой от двойного бронирования;
+- онлайн-запись на одной странице с подтверждением по ссылке и защитой от двойного бронирования, групповая бронь мест;
 - лист ожидания: освободившееся время автоматически предлагается клиентам из очереди;
 - публичные страницы филиалов на ru/kk/en с шаблонами;
 - кабинеты клиента, администратора, владельца и суперадминистратора;
@@ -23,6 +23,12 @@ packages/shared Zod-схемы, перечисления, права, расчё
 infra           Dockerfile'ы, docker-compose.prod.yml, Caddy, резервное копирование
 docs            архитектура, решения, ERD, API, безопасность, аналитика, эксплуатация, тесты
 ```
+
+## Онлайн-проверка без хостинга (GitHub Codespaces)
+
+**Code → Codespaces → Create codespace on main**: весь стенд (PostgreSQL, API, воркер, сайт) с демо-данными поднимается
+автоматически, ссылка на сайт — во вкладке PORTS (порт 3000). Подробно: [docs/CODESPACES.md](docs/CODESPACES.md).
+Проверки GitHub Actions: CI при каждом push, E2E — вручную (Actions → E2E).
 
 ## Быстрый старт (локально)
 
@@ -56,8 +62,8 @@ npm run dev:web      # http://localhost:3000
 ## Проверки
 
 ```bash
-npm test              # 139 unit + integration тестов (нужна БД booking_test)
-npm run test:e2e      # 24 E2E (Playwright: ноутбук, монитор, планшет, телефон), при запущенных api/worker/web
+npm test              # 156 unit + integration тестов (нужна БД booking_test)
+npm run test:e2e      # 44 E2E (Playwright: ноутбук, монитор, планшет, телефон), при запущенных api/worker/web
 npm run lint
 npm run typecheck
 node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
@@ -78,5 +84,6 @@ node apps/api/scripts/load-test.mjs http://localhost:4000 --concurrency 8
 | [SECURITY.md](docs/SECURITY.md) | меры безопасности и что проверить до запуска |
 | [ANALYTICS.md](docs/ANALYTICS.md) | правила подсчёта, атрибуция, боты, внутренние просмотры |
 | [TESTING.md](docs/TESTING.md) | тесты, конкурентные и нагрузочные результаты |
+| [CODESPACES.md](docs/CODESPACES.md) | онлайн-стенд в GitHub Codespaces без хостинга |
 | [OPERATIONS.md](docs/OPERATIONS.md) | развёртывание и обслуживание |
 | `apps/web/content/legal/` | черновики политики, соглашения, правил обработки ПД (нужна проверка юриста) |

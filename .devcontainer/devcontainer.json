@@ -1,0 +1,24 @@
+{
+  // GitHub Codespaces / Dev Containers: весь стенд (PostgreSQL, API, воркер, сайт) в облаке, без покупки хостинга.
+  // Первый запуск ~5–8 минут: установка, миграции, демо-данные, сборка. Дальше — запуск за ~30 секунд.
+  "name": "Онлайн-запись (демо-стенд)",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "shutdownAction": "stopCompose",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Сайт", "onAutoForward": "openBrowser" },
+    "4000": { "label": "API (внутренний)", "onAutoForward": "ignore" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "ignore" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "customizations": {
+    "codespaces": { "openFiles": ["docs/CODESPACES.md"] },
+    "vscode": {
+      "extensions": ["Prisma.prisma", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "bradlc.vscode-tailwindcss"]
+    }
+  }
+}

@@ -22,3 +22,6 @@ backups/
 apps/web/next-env.d.ts
 .test-storage/
 
+
+# локальные файлы ассистента разработки
+.claude/

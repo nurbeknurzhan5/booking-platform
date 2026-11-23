@@ -1,0 +1,6 @@
+# Переводы строк LF в репозитории; shell-скрипты — всегда LF (иначе не запустятся в Linux-контейнере Codespaces/Docker)
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.webp binary
+*.jpg binary
