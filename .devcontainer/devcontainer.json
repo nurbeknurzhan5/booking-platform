@@ -6,6 +6,7 @@
   "service": "app",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "shutdownAction": "stopCompose",
+  "features": { "ghcr.io/devcontainers/features/github-cli:1": {} },
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": { "label": "Сайт", "onAutoForward": "openBrowser" },

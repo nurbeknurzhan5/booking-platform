@@ -63,6 +63,7 @@ https-ссылку на сайт. Покупать хостинг для про�
 | После `git pull` с изменениями | `bash .devcontainer/setup.sh && bash .devcontainer/start.sh` |
 | Вернуть демо-данные к исходным | `npm run db:reset:dev -w @booking/api -- --yes` |
 | Тесты | `npm test` (unit + integration) |
+| Codespace открылся в режиме восстановления (recovery mode, нет `node`/`gh`) | `git pull`, затем `Ctrl+Shift+P` → **Codespaces: Full Rebuild Container**, или удалить Codespace и создать заново |
 
 **Остановите Codespace, когда закончили:** github.com → Codespaces → `…` → Stop. Неактивный
 Codespace останавливается сам через 30 минут. Удалённый Codespace теряет базу; при следующем создании
