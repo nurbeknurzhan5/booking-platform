@@ -26,7 +26,11 @@ const EnvSchema = z
     LOG_LEVEL: z.string().default('info'),
     WEB_ORIGIN: z.string().default('http://localhost:3000'),
     PUBLIC_BASE_URL: z.string().default('http://localhost:3000'),
-    TRUST_PROXY: z.coerce.number().int().min(0).default(1),
+    /**
+     * Сколько «пишущих» X-Forwarded-For прокси перед API (D-54). 0 — заголовок игнорируется, IP = адрес соединения.
+     * Next.js (rewrite) присланный клиентом заголовок пропускает как есть, поэтому 1 — только за Caddy (production).
+     */
+    TRUST_PROXY: z.coerce.number().int().min(0).default(0),
     COOKIE_SECURE: bool,
     DATABASE_URL: z.string().min(1),
     DATABASE_POOL_SIZE: z.coerce.number().int().min(1).default(20),
@@ -58,9 +62,24 @@ const EnvSchema = z
     S3_FORCE_PATH_STYLE: bool,
     MAX_UPLOAD_BYTES: z.coerce.number().int().default(5 * 1024 * 1024),
     WORKER_ID: z.string().optional(),
+    /**
+     * «Тестовый телефон»: канал dev_inbox и GET /dev/inbox. Включается только явно (dev/Codespaces/CI/тесты);
+     * в production запрещён.
+     */
+    DEV_INBOX_ENABLED: bool,
   })
   .superRefine((env, ctx) => {
+    if (env.NOTIFICATION_CHANNELS.includes('dev_inbox') && !env.DEV_INBOX_ENABLED && env.APP_ENV !== 'production') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_CHANNELS'],
+        message: 'канал dev_inbox включается только вместе с DEV_INBOX_ENABLED=true (тестовый телефон)',
+      });
+    }
     if (env.APP_ENV === 'production') {
+      if (env.DEV_INBOX_ENABLED) {
+        ctx.addIssue({ code: 'custom', path: ['DEV_INBOX_ENABLED'], message: 'тестовый телефон (dev_inbox) запрещён в production' });
+      }
       if (env.NOTIFICATION_CHANNELS.includes('dev_inbox')) {
         ctx.addIssue({ code: 'custom', path: ['NOTIFICATION_CHANNELS'], message: 'dev_inbox запрещён в production' });
       }
@@ -75,6 +94,11 @@ export type AppConfig = z.infer<typeof EnvSchema>;
 let cached: AppConfig | null = null;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  // Fail-closed: production-сборка без явного APP_ENV не должна молча стать «development»
+  // (иначе включились бы dev-возможности).
+  if (env.NODE_ENV === 'production' && !env.APP_ENV?.trim()) {
+    throw new Error('Некорректная конфигурация окружения: APP_ENV: при NODE_ENV=production значение APP_ENV нужно задать явно (production | test | development)');
+  }
   const parsed = EnvSchema.safeParse(env);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -86,6 +110,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 export function getConfig(): AppConfig {
   if (!cached) cached = loadConfig();
   return cached;
+}
+
+/** «Тестовый телефон» (dev_inbox) доступен: только по явному флагу и никогда в production. */
+export function devInboxEnabled(cfg: AppConfig = getConfig()): boolean {
+  return cfg.DEV_INBOX_ENABLED && cfg.APP_ENV !== 'production';
 }
 
 /** Только для тестов. */

@@ -138,7 +138,7 @@ export class StaffAppointmentsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.load(t, id, 'appointments.manage');
-    const r = await this.idem.run(`status:${id}`, key, body, async () => ({
+    const r = await this.idem.run(`status:staff:${actor.userId}:${id}`, key, body, async () => ({
       body:
         body.status === 'cancelled_by_admin'
           ? await this.booking.cancel(id, actor, 'admin', body.reason)
@@ -161,7 +161,7 @@ export class StaffAppointmentsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.load(t, id, 'appointments.manage');
-    const r = await this.idem.run(`reschedule:${id}`, key, body, async () => ({
+    const r = await this.idem.run(`reschedule:staff:${actor.userId}:${id}`, key, body, async () => ({
       body: await this.booking.reschedule(id, body, actor, 'admin'),
     }));
     res.status(r.status);

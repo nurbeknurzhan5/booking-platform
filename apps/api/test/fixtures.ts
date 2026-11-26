@@ -1,8 +1,13 @@
+import type { BookingItemSchema } from '@booking/shared';
 import { DateTime } from 'luxon';
+import type { z } from 'zod';
 import { API, createOrgWithOwner, Http, type TestContext } from './helpers';
 import { NotificationDispatcher } from '../src/notifications/dispatcher.service';
 
 export const TZ = 'Asia/Almaty';
+
+/** Позиция брони в запросе (как в API: специалист, групповые места seats/together). */
+export type TestBookingItem = z.input<typeof BookingItemSchema>;
 
 /** Дата через N дней в часовом поясе филиала. */
 export function futureDate(days = 3): string {
@@ -132,7 +137,7 @@ export async function drainNotifications(ctx: TestContext): Promise<number> {
 export async function bookAndConfirm(
   ctx: TestContext,
   slug: string,
-  body: { startAt: string; items: Array<{ serviceId: string; specialistId?: string | null }>; phone?: string; promoCode?: string },
+  body: { startAt: string; items: TestBookingItem[]; phone?: string; promoCode?: string },
 ) {
   const http = new Http(ctx.app);
   const phone = body.phone ?? nextPhone();

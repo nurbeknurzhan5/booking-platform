@@ -8,6 +8,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, PageHeader, Select, Spinner, Table, Tabs, Td, Textarea, statusTone } from '@/components/ui';
 import { ImageUpload } from '@/components/dashboard/ImageUpload';
+import { apiPath } from '@/lib/api-path';
 
 interface Template {
   id: string;
@@ -43,8 +44,8 @@ export default function PageEditor() {
   const { branchId } = useParams<{ branchId: string }>();
   const { base, org, canManage } = useOrg();
   const { t } = useT();
-  const editor = useApi<Editor>(`${base}/branches/${branchId}/page`);
-  const templates = useApi<Template[]>('/templates');
+  const editor = useApi<Editor>(apiPath`${base}/branches/${branchId}/page`);
+  const templates = useApi<Template[]>(apiPath`/templates`);
   const [tab, setTab] = useState<Tab>('content');
   const [d, setD] = useState<Editor['draft'] | null>(null);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
@@ -69,7 +70,7 @@ export default function PageEditor() {
     setBusy(true);
     setMsg({});
     try {
-      const r = await api<Editor>(`${base}/branches/${branchId}/page/draft`, {
+      const r = await api<Editor>(apiPath`${base}/branches/${branchId}/page/draft`, {
         method: 'PUT',
         body: { content: d!.content, templateId: d!.templateId, colorScheme: d!.colorScheme, bookingButtonPosition: d!.bookingButtonPosition, primaryLocale: d!.primaryLocale },
       });
@@ -108,7 +109,7 @@ export default function PageEditor() {
               onClick={async () => {
                 if (!(await save())) return;
                 try {
-                  await api(`${base}/branches/${branchId}/page/publish`, { method: 'POST' });
+                  await api(apiPath`${base}/branches/${branchId}/page/publish`, { method: 'POST' });
                   setMsg({ ok: t('published') });
                   await editor.reload();
                 } catch (err) {
@@ -180,7 +181,7 @@ export default function PageEditor() {
                   value={e.page.status}
                   onChange={async (ev) => {
                     try {
-                      await api(`${base}/branches/${branchId}/page/status`, { method: 'PUT', body: { status: ev.target.value } });
+                      await api(apiPath`${base}/branches/${branchId}/page/status`, { method: 'PUT', body: { status: ev.target.value } });
                       await editor.reload();
                     } catch (err) {
                       setMsg({ err: errorMessage(err) });
@@ -249,7 +250,7 @@ export default function PageEditor() {
       {tab === 'translations' && (
         <Card
           actions={['kk', 'en', 'ru'].filter((l) => l !== loc).map((l) => (
-            <Button key={l} size="sm" variant="secondary" onClick={async () => { try { await api(`/organizations/${org.id}/translations/auto`, { method: 'POST', body: { locale: l } }); setMsg({ ok: 'OK' }); } catch (err) { setMsg({ err: errorMessage(err) }); } }}>
+            <Button key={l} size="sm" variant="secondary" onClick={async () => { try { await api(apiPath`/organizations/${org.id}/translations/auto`, { method: 'POST', body: { locale: l } }); setMsg({ ok: 'OK' }); } catch (err) { setMsg({ err: errorMessage(err) }); } }}>
               {t('autoTranslate')} → {l.toUpperCase()}
             </Button>
           ))}
@@ -271,7 +272,7 @@ export default function PageEditor() {
                 <Td>{templates.data?.find((x) => x.id === p.templateId)?.name}</Td>
                 <Td>{new Date(p.createdAt).toLocaleString('ru-RU')}</Td>
                 <Td>
-                  <Button size="sm" variant="secondary" onClick={async () => { editor.setData(await api<Editor>(`${base}/branches/${branchId}/page/versions/${p.id}/restore`, { method: 'POST' })); setMsg({ ok: t('draftSaved') }); }}>
+                  <Button size="sm" variant="secondary" onClick={async () => { editor.setData(await api<Editor>(apiPath`${base}/branches/${branchId}/page/versions/${p.id}/restore`, { method: 'POST' })); setMsg({ ok: t('draftSaved') }); }}>
                     {t('restore')}
                   </Button>
                 </Td>
@@ -297,8 +298,8 @@ function TranslationRow({ tr, onSaved }: { tr: Editor['translations'][number]; o
         <Badge tone={tr.status === 'missing' ? 'amber' : tr.status === 'auto_translated' ? 'blue' : 'green'}>{t(`tr_${tr.status}` as 'tr_missing')}</Badge>
         {tr.isOutdated && <div className="text-xs text-amber-700">{t('outdated')}</div>}
         <div className="mt-1 flex gap-1">
-          <Button size="sm" variant="secondary" onClick={async () => { await api(`/organizations/${org.id}/translations`, { method: 'PUT', body: { items: [{ entityType: tr.entityType, entityId: tr.entityId, field: tr.field, locale: tr.locale, text: v, verified: false }] } }); onSaved(); }}>{t('save')}</Button>
-          {tr.status === 'auto_translated' && <Button size="sm" variant="ghost" onClick={async () => { await api(`/organizations/${org.id}/translations`, { method: 'PUT', body: { items: [{ entityType: tr.entityType, entityId: tr.entityId, field: tr.field, locale: tr.locale, text: v, verified: true }] } }); onSaved(); }}>✓</Button>}
+          <Button size="sm" variant="secondary" onClick={async () => { await api(apiPath`/organizations/${org.id}/translations`, { method: 'PUT', body: { items: [{ entityType: tr.entityType, entityId: tr.entityId, field: tr.field, locale: tr.locale, text: v, verified: false }] } }); onSaved(); }}>{t('save')}</Button>
+          {tr.status === 'auto_translated' && <Button size="sm" variant="ghost" onClick={async () => { await api(apiPath`/organizations/${org.id}/translations`, { method: 'PUT', body: { items: [{ entityType: tr.entityType, entityId: tr.entityId, field: tr.field, locale: tr.locale, text: v, verified: true }] } }); onSaved(); }}>✓</Button>}
         </div>
       </Td>
     </tr>

@@ -9,9 +9,28 @@
 	request_body {
 		max_size 8MB
 	}
+	# trusted_proxies не задаём: Caddy — первый прокси, присланные клиентом X-Forwarded-* отбрасываются,
+	# X-Forwarded-For = адрес TCP-соединения клиента. Next.js (rewrite) запись не добавляет → TRUST_PROXY=1 в API.
 	reverse_proxy web:3000
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				# Токены в адресе (управление записью, подтверждение, лист ожидания) и query не пишутся:
+				# сегмент после manage|confirm|waitlist|waitlist-offers → [REDACTED], query целиком → ?[REDACTED].
+				request>uri regexp "(/(?:manage|confirm|waitlist|waitlist-offers)/)[^/?#]+|([?]).*$" "$1$2[REDACTED]"
+				request>headers>Referer regexp "(/(?:manage|confirm|waitlist|waitlist-offers)/)[^/?#]+|([?]).*$" "$1$2[REDACTED]"
+				resp_headers>Location regexp "(/(?:manage|confirm|waitlist|waitlist-offers)/)[^/?#]+|([?]).*$" "$1$2[REDACTED]"
+				# Учётные данные и одноразовые коды не пишутся вовсе (по умолчанию Caddy пишет REDACTED, удаляем явно).
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>Proxy-Authorization delete
+				request>headers>X-Csrf-Token delete
+				request>headers>X-Mfa-Code delete
+				request>headers>Idempotency-Key delete
+				resp_headers>Set-Cookie delete
+			}
+		}
 	}
 }

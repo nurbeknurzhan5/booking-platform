@@ -180,8 +180,12 @@ function minutesToInstant(midnight: DateTime, minutes: number): number {
 
 function exceptionFor(exceptions: ExceptionRule[], date: string): ExceptionRule | undefined {
   // Приоритет у «закрыто», затем у самого узкого диапазона.
+  // Порядок строк из БД не задан — выбор должен быть детерминированным: самый узкий диапазон,
+  // при равной ширине — начавшийся позже (более свежее правило). Даты YYYY-MM-DD сравниваются строками.
   const hits = exceptions.filter((e) => e.dateFrom <= date && date <= e.dateTo);
-  return hits.find((e) => e.kind === 'closed') ?? hits[0];
+  const width = (e: ExceptionRule) => DateTime.fromISO(e.dateTo).diff(DateTime.fromISO(e.dateFrom), 'days').days;
+  const narrowest = [...hits].sort((a, b) => width(a) - width(b) || (a.dateFrom < b.dateFrom ? 1 : a.dateFrom > b.dateFrom ? -1 : 0));
+  return hits.find((e) => e.kind === 'closed') ?? narrowest[0];
 }
 
 /**

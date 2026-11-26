@@ -9,6 +9,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { Alert, Badge, Card, PageHeader, Spinner, statusTone } from '@/components/ui';
 import type { ApptRow } from '@/components/dashboard/AppointmentDialogs';
 import { addDays, localISODate, money, timeOnly, zonedStartOfDay } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 /** Плитка показателя со значком. */
 function Stat({ icon, label, value, hint, tone }: { icon: ReactNode; label: string; value: ReactNode; hint?: ReactNode; tone: string }) {
@@ -34,10 +35,10 @@ export default function OverviewPage() {
   const to = zonedStartOfDay(addDays(today, 2), tz);
   const allowed = branch && can('appointments.view', branch.id);
   const { data, loading } = useApi<{ items: ApptRow[]; total: number }>(
-    allowed ? `${base}/appointments?branchId=${branch.id}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&status=pending_otp,confirmed,completed&pageSize=200` : null,
+    allowed ? apiPath`${base}/appointments?branchId=${branch.id}&from=${from}&to=${to}&status=pending_otp,confirmed,completed&pageSize=200` : null,
   );
   // Предупреждения графика смен (задача 21): завтра не заполнено, записи вне смен
-  const shifts = useApi<{ mode: string; tomorrow: null | { filled: boolean }; conflicts: Array<{ appointmentId: string }> }>(branch ? `${base}/branches/${branch.id}/shifts/status` : null);
+  const shifts = useApi<{ mode: string; tomorrow: null | { filled: boolean }; conflicts: Array<{ appointmentId: string }> }>(branch ? apiPath`${base}/branches/${branch.id}/shifts/status` : null);
   const items = data?.items ?? [];
   const byDay = (d: string) => items.filter((a) => localISODate(new Date(a.startAt), tz) === d);
   const revenue = (d: string) => byDay(d).filter((a) => a.status !== 'pending_otp').reduce((s, a) => s + a.totalPrice, 0);

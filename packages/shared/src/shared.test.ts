@@ -25,6 +25,16 @@ import {
   UpdateSpecialistSchema,
   ServiceInputSchema,
   TemplateConfigSchema,
+  zDate,
+  zDateTime,
+  isValidIsoDate,
+  isIsoPeriodValid,
+  isKzMobile,
+  SetSubscriptionSchema,
+  CreateOrganizationSchema,
+  AvailabilitySearchSchema,
+  ShiftRangeQuerySchema,
+  WorkingIntervalSchema,
 } from './index';
 
 const d = (s: string) => new Date(s);
@@ -298,5 +308,153 @@ describe('template config (магазин оформлений)', () => {
     expect(TemplateConfigSchema.safeParse({ ...base, style: { hero: 'parallax' } }).success).toBe(false);
     expect(TemplateConfigSchema.safeParse({ ...base, layout: 'retro' }).success).toBe(false);
     expect(TemplateConfigSchema.safeParse({ ...base, tags: ['Computer Club'] }).success).toBe(false);
+  });
+});
+
+describe('аудит B: даты и периоды', () => {
+  const planId = '0b6c4b8e-2a4f-4f7f-9b8a-3c1d2e3f4a5b';
+
+  it('zDate отклоняет несуществующие даты и принимает 29 февраля високосного года', () => {
+    for (const bad of ['2026-02-31', '2026-13-01', '2026-00-10', '2025-02-29', '2026-04-31', '2026-01-00', '2100-02-29', '0000-01-01', '2026-2-01', '']) {
+      expect(zDate.safeParse(bad).success).toBe(false);
+    }
+    for (const ok of ['2024-02-29', '2000-02-29', '2026-12-31', '2026-01-01']) expect(zDate.safeParse(ok).success).toBe(true);
+    expect(isValidIsoDate('2026-02-28')).toBe(true);
+    expect(isValidIsoDate('2026-02-29')).toBe(false);
+  });
+
+  it('несуществующая дата в поиске слотов и в периоде смен — ошибка валидации', () => {
+    const items = [{ serviceId: planId }];
+    expect(AvailabilitySearchSchema.safeParse({ date: '2026-02-31', items }).success).toBe(false);
+    expect(AvailabilitySearchSchema.safeParse({ date: '2026-02-28', items }).success).toBe(true);
+    expect(ShiftRangeQuerySchema.safeParse({ from: '2026-02-30', to: '2026-03-05' }).success).toBe(false);
+  });
+
+  it('zDateTime: календарь и диапазон лет (год 0000 PostgreSQL не принимает)', () => {
+    expect(zDateTime.safeParse('2026-02-31T10:00:00Z').success).toBe(false);
+    expect(zDateTime.safeParse('0000-01-01T00:00:00Z').success).toBe(false);
+    expect(zDateTime.safeParse('2024-02-29T10:00:00+05:00').success).toBe(true);
+    expect(zDateTime.safeParse('2026-12-01T10:00:00+99:99').success).toBe(false);
+  });
+
+  it('24:00 допустимо как конец интервала и недопустимо как начало', () => {
+    expect(WorkingIntervalSchema.safeParse({ start: '18:00', end: '24:00' }).success).toBe(true);
+    expect(WorkingIntervalSchema.safeParse({ start: '24:00', end: '24:00' }).success).toBe(false);
+    expect(WorkingIntervalSchema.safeParse({ start: '24:00', end: '23:00' }).success).toBe(false);
+    expect(WorkingIntervalSchema.safeParse({ start: '09:00', end: '24:30' }).success).toBe(false);
+  });
+
+  it('период сравнивается как моменты времени, а не как строки', () => {
+    // 10:00+05:00 = 05:00Z — раньше 06:00Z, хотя строка начала «больше»
+    expect(isIsoPeriodValid('2026-12-01T10:00:00+05:00', '2026-12-01T06:00:00Z')).toBe(true);
+    // 05:00-05:00 = 10:00Z — позже 09:00Z
+    expect(isIsoPeriodValid('2026-12-01T09:00:00Z', '2026-12-01T05:00:00-05:00')).toBe(true);
+    // 04:00-08:00 = 12:00Z — позже 11:00Z, хотя строка начала «меньше»
+    expect(isIsoPeriodValid('2026-12-01T04:00:00-08:00', '2026-12-01T11:00:00Z')).toBe(false);
+    expect(isIsoPeriodValid('2026-12-01T06:00:00Z', '2026-12-01T06:00:00Z')).toBe(false);
+    expect(isIsoPeriodValid('x', '2026-12-01T06:00:00Z')).toBe(false);
+  });
+
+  it('SetSubscriptionSchema: периоды со смещениями', () => {
+    const base = { planId, graceDays: 7 };
+    // Строковое сравнение отклоняло корректные периоды...
+    expect(SetSubscriptionSchema.safeParse({ ...base, startsAt: '2026-12-01T10:00:00+05:00', endsAt: '2026-12-01T06:00:00Z' }).success).toBe(true);
+    expect(SetSubscriptionSchema.safeParse({ ...base, startsAt: '2026-12-01T09:00:00Z', endsAt: '2026-12-01T05:00:00-05:00' }).success).toBe(true);
+    // ...и пропускало неверные (начало 12:00Z позже конца 11:00Z)
+    expect(SetSubscriptionSchema.safeParse({ ...base, startsAt: '2026-12-01T04:00:00-08:00', endsAt: '2026-12-01T11:00:00Z' }).success).toBe(false);
+    expect(SetSubscriptionSchema.safeParse({ ...base, startsAt: '2026-12-01T12:00:00+05:00', endsAt: '2026-12-01T06:00:00Z' }).success).toBe(false);
+  });
+
+  it('CreateOrganizationSchema.subscription проверяет период', () => {
+    const org = { name: 'Орг', businessCategory: 'beauty_salon' };
+    const sub = (startsAt: string, endsAt: string) => ({ ...org, subscription: { planId, startsAt, endsAt } });
+    expect(CreateOrganizationSchema.safeParse(sub('2026-12-01T12:00:00Z', '2026-12-01T06:00:00Z')).success).toBe(false);
+    expect(CreateOrganizationSchema.safeParse(sub('2026-12-01T04:00:00-08:00', '2026-12-01T11:00:00Z')).success).toBe(false);
+    expect(CreateOrganizationSchema.safeParse(sub('2026-12-01T10:00:00+05:00', '2026-12-01T06:00:00Z')).success).toBe(true);
+    expect(CreateOrganizationSchema.safeParse(org).success).toBe(true);
+  });
+
+  it('PromotionInputSchema: период акции со смещениями', () => {
+    const p = { kind: 'sale', name: 'x', discountType: 'percent', discountValue: 10 };
+    expect(PromotionInputSchema.safeParse({ ...p, startsAt: '2026-12-01T04:00:00-08:00', endsAt: '2026-12-01T11:00:00Z' }).success).toBe(false);
+    expect(PromotionInputSchema.safeParse({ ...p, startsAt: '2026-12-01T10:00:00+05:00', endsAt: '2026-12-01T06:00:00Z' }).success).toBe(true);
+    expect(PromotionInputSchema.safeParse({ ...p, startsAt: '2026-12-01T10:00:00Z', endsAt: null }).success).toBe(true);
+  });
+});
+
+describe('аудит B: цены', () => {
+  it('остаток округления промокода не теряется, если последняя позиция бесплатна', () => {
+    const r = calculateVisitPrice(
+      [
+        { key: 'a', serviceId: 's1', basePrice: 333, sales: [] },
+        { key: 'b', serviceId: 's2', basePrice: 333, sales: [] },
+        { key: 'c', serviceId: 's3', basePrice: 500, sales: [{ promotionId: 'free', discountType: 'percent', value: 100 }] },
+      ],
+      { promotionId: 'pc', code: 'X', discountType: 'percent', value: 10, minAmount: null, serviceIds: null },
+    );
+    expect(r.subtotal).toBe(666);
+    expect(r.promoDiscountTotal).toBe(67);
+    expect(r.total).toBe(599);
+    expect(r.items[2]!.finalPrice).toBe(0);
+    expect(r.items[2]!.promoDiscount).toBe(0);
+    expect(r.items.every((i) => i.finalPrice >= 0 && i.promoDiscount >= 0)).toBe(true);
+    expect(r.items.reduce((s, i) => s + i.finalPrice, 0)).toBe(r.total);
+  });
+
+  it('остаток распределяется и при нескольких бесплатных позициях в конце', () => {
+    const r = calculateVisitPrice(
+      [
+        { key: 'a', serviceId: 's1', basePrice: 1, sales: [] },
+        { key: 'b', serviceId: 's2', basePrice: 1, sales: [] },
+        { key: 'c', serviceId: 's3', basePrice: 1, sales: [] },
+        { key: 'd', serviceId: 's4', basePrice: 0, sales: [] },
+        { key: 'e', serviceId: 's5', basePrice: 0, sales: [] },
+      ],
+      { promotionId: 'pc', code: 'X', discountType: 'fixed', value: 2, minAmount: null, serviceIds: null },
+    );
+    expect(r.promoDiscountTotal).toBe(2);
+    expect(r.total).toBe(1);
+    expect(r.items.every((i) => i.finalPrice >= 0)).toBe(true);
+  });
+
+  it('фиксированная скидка больше цены и 100 % — итог 0, не меньше', () => {
+    const items = [
+      { key: 'a', serviceId: 's1', basePrice: 333, sales: [] },
+      { key: 'b', serviceId: 's2', basePrice: 334, sales: [{ promotionId: 'f', discountType: 'fixed' as const, value: 99999 }] },
+    ];
+    const fixed = calculateVisitPrice(items, { promotionId: 'pc', code: 'X', discountType: 'fixed', value: 100000, minAmount: null, serviceIds: null });
+    expect(fixed.items[1]!.saleDiscount).toBe(334);
+    expect(fixed.total).toBe(0);
+    expect(fixed.promoDiscountTotal).toBe(333);
+    const full = calculateVisitPrice(items, { promotionId: 'pc', code: 'X', discountType: 'percent', value: 100, minAmount: null, serviceIds: null });
+    expect(full.total).toBe(0);
+    expect(full.items.every((i) => i.finalPrice === 0)).toBe(true);
+    expect(applyDiscount(500, { discountType: 'percent', value: 100 })).toBe(500);
+    expect(applyDiscount(500, { discountType: 'fixed', value: -10 })).toBe(0);
+  });
+});
+
+describe('аудит B: телефоны и права', () => {
+  it('код оператора 776 — мобильный номер Казахстана', () => {
+    expect(isKzMobile('+77761234567')).toBe(true);
+    expect(normalizeKzMobile('8 776 123 45 67')).toBe('+77761234567');
+    expect(isKzMobile('+77721234567')).toBe(false); // городской Караганда
+  });
+
+  it('номер с «+» и пропущенной цифрой не превращается в другой валидный номер', () => {
+    expect(normalizePhone('+7 701 123 456')).toBeNull();
+    expect(normalizeKzMobile('+7 701 123 456')).toBeNull();
+    expect(normalizePhone('+6012345678')).toBeNull();
+    // без «+» 10 цифр — номер без кода страны
+    expect(normalizePhone('701 123 45 67')).toBe('+77011234567');
+    expect(normalizePhone('+7 701 123 45 67')).toBe('+77011234567');
+  });
+
+  it('branchId из Object.prototype не ломает проверку прав', () => {
+    const admin = { role: 'BRANCH_ADMIN' as const, branchPermissions: { b1: ['appointments.view'] } };
+    for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(() => hasPermission(admin, 'appointments.view', id)).not.toThrow();
+      expect(hasPermission(admin, 'appointments.view', id)).toBe(false);
+    }
   });
 });

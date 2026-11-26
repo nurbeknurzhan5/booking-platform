@@ -4,6 +4,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { Badge, Card, PageHeader, Spinner } from '@/components/ui';
 import { money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Stats {
   organizations: number;
@@ -27,8 +28,8 @@ interface Integrations {
 
 export default function AdminHome() {
   const { t, st } = useT();
-  const stats = useApi<Stats>('/admin/stats');
-  const integ = useApi<Integrations>('/admin/integrations');
+  const stats = useApi<Stats>(apiPath`/admin/stats`);
+  const integ = useApi<Integrations>(apiPath`/admin/integrations`);
   if (!stats.data) return <Spinner />;
   const s = stats.data;
   const tile = (label: string, v: string | number) => (

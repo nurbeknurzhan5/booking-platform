@@ -5,8 +5,18 @@ import { JobsService } from '../common/jobs.service';
 import { sha256 } from '../common/crypto';
 import { getConfig } from '../config/config';
 import { AppError } from '../common/errors';
+import { allowedBranches, assertBranchPermission } from '../common/tenant-access';
+import type { TenantContext } from '../common/request-context';
+import type { Prisma } from '../generated/prisma/client';
 
 export type EntityType = 'page' | 'service' | 'specialist' | 'service_category' | 'promotion';
+
+/**
+ * Область переводов, доступная сотруднику: null — вся организация (владелец, суперадмин);
+ * иначе — страницы и специалисты филиалов, где есть право pages.edit. Сущности уровня организации
+ * (услуги, категории, акции) администратору филиала недоступны: они общие для всех филиалов.
+ */
+export type TranslationScope = { pageIds: string[]; specialistIds: string[] } | null;
 
 /** Адаптер Google Cloud Translation v2 (поддерживает казахский). Ключ предоставляет заказчик (R-03). */
 @Injectable()
@@ -84,26 +94,51 @@ export class TranslationService {
     await this.sync(tx, organizationId, entityType, entityId, source, fields);
   }
 
-  list(organizationId: string, filter: { entityType?: EntityType; entityIds?: string[]; locale?: Locale }) {
+  /** Область переводов сотрудника (см. TranslationScope). */
+  async scopeFor(t: TenantContext): Promise<TranslationScope> {
+    const branches = allowedBranches(t, 'pages.edit');
+    if (branches === null) return null;
+    const where = { organizationId: t.organizationId, branchId: { in: branches } };
+    const pages = await this.prisma.publicPage.findMany({ where, select: { id: true } });
+    const specialists = await this.prisma.specialist.findMany({ where, select: { id: true } });
+    return { pageIds: pages.map((p) => p.id), specialistIds: specialists.map((s) => s.id) };
+  }
+
+  private scopeWhere(scope: TranslationScope): Prisma.PageTranslationWhereInput {
+    if (scope === null) return {};
+    return {
+      OR: [
+        { entityType: 'page', entityId: { in: scope.pageIds } },
+        { entityType: 'specialist', entityId: { in: scope.specialistIds } },
+      ],
+    };
+  }
+
+  list(organizationId: string, filter: { entityType?: EntityType; entityIds?: string[]; locale?: Locale; scope?: TranslationScope }) {
     return this.prisma.pageTranslation.findMany({
       where: {
         organizationId,
         ...(filter.entityType ? { entityType: filter.entityType } : {}),
         ...(filter.entityIds ? { entityId: { in: filter.entityIds } } : {}),
         ...(filter.locale ? { locale: filter.locale } : {}),
+        ...this.scopeWhere(filter.scope ?? null),
       },
       orderBy: [{ entityType: 'asc' }, { field: 'asc' }, { locale: 'asc' }],
     });
   }
 
-  /** Ручное редактирование перевода владельцем. */
+  /**
+   * Ручное редактирование перевода. Право проверяется по каждой сущности до любых изменений:
+   * страница и специалист — pages.edit в их филиале, сущности уровня организации — только владелец.
+   */
   async upsertManual(
-    organizationId: string,
+    t: TenantContext,
     items: Array<{ entityType: EntityType; entityId: string; field: string; locale: Locale; text: string; verified: boolean }>,
     userId: string | null,
   ) {
+    const organizationId = t.organizationId;
+    for (const it of items) await this.assertCanEdit(t, it.entityType, it.entityId);
     for (const it of items) {
-      await this.assertEntity(organizationId, it.entityType, it.entityId);
       const key = { organizationId_entityType_entityId_field_locale: { organizationId, entityType: it.entityType, entityId: it.entityId, field: it.field, locale: it.locale } };
       const existing = await this.prisma.pageTranslation.findUnique({ where: key });
       const status: TranslationStatus =
@@ -128,30 +163,38 @@ export class TranslationService {
     }
   }
 
-  private async assertEntity(organizationId: string, entityType: EntityType, entityId: string) {
-    const where = { id: entityId, organizationId };
+  private async assertCanEdit(t: TenantContext, entityType: EntityType, entityId: string) {
+    const where = { id: entityId, organizationId: t.organizationId };
+    if (entityType === 'page' || entityType === 'specialist') {
+      const found =
+        entityType === 'page'
+          ? await this.prisma.publicPage.findFirst({ where, select: { branchId: true } })
+          : await this.prisma.specialist.findFirst({ where, select: { branchId: true } });
+      if (!found) throw AppError.notFound('Объект перевода');
+      assertBranchPermission(t, 'pages.edit', found.branchId);
+      return;
+    }
     const found =
-      entityType === 'page'
-        ? await this.prisma.publicPage.findFirst({ where })
-        : entityType === 'service'
-          ? await this.prisma.service.findFirst({ where })
-          : entityType === 'specialist'
-            ? await this.prisma.specialist.findFirst({ where })
-            : entityType === 'service_category'
-              ? await this.prisma.serviceCategory.findFirst({ where })
-              : await this.prisma.promotion.findFirst({ where });
+      entityType === 'service'
+        ? await this.prisma.service.findFirst({ where, select: { id: true } })
+        : entityType === 'service_category'
+          ? await this.prisma.serviceCategory.findFirst({ where, select: { id: true } })
+          : await this.prisma.promotion.findFirst({ where, select: { id: true } });
     if (!found) throw AppError.notFound('Объект перевода');
+    if (t.grant.role !== 'OWNER') throw AppError.forbidden('Переводы услуг, категорий и акций организации доступны только владельцу');
   }
 
   /** Поставить в очередь автоперевод языка. Ручные переводы перезаписываются только с явного согласия. */
-  async requestAuto(organizationId: string, locale: Locale, opts: { overwriteAuto: boolean; overwriteManual: boolean }) {
+  async requestAuto(organizationId: string, locale: Locale, opts: { overwriteAuto: boolean; overwriteManual: boolean }, scope: TranslationScope = null) {
     if (!this.provider.isConfigured()) {
       throw AppError.unprocessable('VALIDATION_ERROR', 'Автоперевод не подключён: требуется ключ Google Cloud Translation (см. настройки интеграций)');
     }
     const statuses: TranslationStatus[] = ['missing'];
     if (opts.overwriteAuto) statuses.push('auto_translated');
     if (opts.overwriteManual) statuses.push('manually_edited', 'verified');
-    const rows = await this.prisma.pageTranslation.findMany({ where: { organizationId, locale, OR: [{ status: { in: statuses } }, { status: 'auto_translated', isOutdated: true }] } });
+    const rows = await this.prisma.pageTranslation.findMany({
+      where: { organizationId, locale, AND: [{ OR: [{ status: { in: statuses } }, { status: 'auto_translated', isOutdated: true }] }, this.scopeWhere(scope)] },
+    });
     for (const r of rows) {
       await this.jobs.enqueue('translate', { id: r.id, force: opts.overwriteManual }, { dedupeKey: `translate:${r.id}:${r.sourceHash}:${Date.now()}` });
     }

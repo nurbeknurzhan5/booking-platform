@@ -6,6 +6,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, Modal, PageHeader, Spinner, Table, Td } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 const BRANCH_PERMISSIONS = [
   'appointments.view',
@@ -68,7 +69,7 @@ type Access = Record<string, string[]>;
 export default function UsersPage() {
   const { base, branches } = useOrg();
   const { t, st, lang } = useT();
-  const list = useApi<Staff[]>(`${base}/users`);
+  const list = useApi<Staff[]>(apiPath`${base}/users`);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
@@ -131,12 +132,12 @@ export default function UsersPage() {
                         variant="secondary"
                         onClick={() => {
                           const temporaryPassword = prompt(t('temporaryPasswordPrompt'));
-                          if (temporaryPassword) void run(() => api(`${base}/users/${u.userId}/reset-password`, { method: 'POST', body: { temporaryPassword } }), t('passwordResetDone'));
+                          if (temporaryPassword) void run(() => api(apiPath`${base}/users/${u.userId}/reset-password`, { method: 'POST', body: { temporaryPassword } }), t('passwordResetDone'));
                         }}
                       >
                         {t('resetPassword')}
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { if (confirm(`${t('revoke')}?`)) void run(() => api(`${base}/users/${u.userId}`, { method: 'DELETE' })); }}>{t('revoke')}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { if (confirm(`${t('revoke')}?`)) void run(() => api(apiPath`${base}/users/${u.userId}`, { method: 'DELETE' })); }}>{t('revoke')}</Button>
                     </div>
                   )}
                 </Td>
@@ -155,7 +156,7 @@ export default function UsersPage() {
           </div>
           <AccessEditor value={access} onChange={setAccess} />
           <div className="flex justify-end">
-            <Button onClick={async () => { setError(null); try { await api(`${base}/users`, { method: 'POST', body: { ...form, role: 'BRANCH_ADMIN', branchAccess: toArray(access) } }); setCreate(false); setForm({ email: '', name: '', temporaryPassword: '' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('create')}</Button>
+            <Button onClick={async () => { setError(null); try { await api(apiPath`${base}/users`, { method: 'POST', body: { ...form, role: 'BRANCH_ADMIN', branchAccess: toArray(access) } }); setCreate(false); setForm({ email: '', name: '', temporaryPassword: '' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('create')}</Button>
           </div>
         </div>
       </Modal>
@@ -164,7 +165,7 @@ export default function UsersPage() {
           <Alert>{error}</Alert>
           <AccessEditor value={access} onChange={setAccess} />
           <div className="flex justify-end">
-            <Button onClick={async () => { setError(null); try { await api(`${base}/users/${editUser!.userId}/access`, { method: 'PUT', body: { branchAccess: toArray(access) } }); setEditUser(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('save')}</Button>
+            <Button onClick={async () => { setError(null); try { await api(apiPath`${base}/users/${editUser!.userId}/access`, { method: 'PUT', body: { branchAccess: toArray(access) } }); setEditUser(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('save')}</Button>
           </div>
         </div>
       </Modal>

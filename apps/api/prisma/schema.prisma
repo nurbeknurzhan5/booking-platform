@@ -121,6 +121,8 @@ model User {
   isSuperadmin       Boolean   @default(false) @map("is_superadmin")
   mfaSecretEnc       String?   @map("mfa_secret_enc")
   mfaEnabled         Boolean   @default(false) @map("mfa_enabled")
+  /// Последний принятый временной шаг TOTP: повторно тот же или более ранний код не принимается (RFC 6238 §5.2).
+  mfaLastUsedStep    Int?      @map("mfa_last_used_step")
   mustChangePassword Boolean   @default(false) @map("must_change_password")
   locale             String    @default("ru") @db.VarChar(2)
   failedLoginCount   Int       @default(0) @map("failed_login_count")

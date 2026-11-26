@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Button, Field, Input } from '@/components/ui';
 import { DashI18nProvider, useT } from '@/lib/i18n-dashboard';
+import { apiPath } from '@/lib/api-path';
 
 interface Profile {
   isSuperadmin: boolean;
@@ -37,11 +38,11 @@ function LoginForm() {
     setError(null);
     try {
       if (mustChange) {
-        await api('/auth/staff/change-password', { method: 'POST', body: { currentPassword: password, newPassword } });
-        go(await api<Profile>('/auth/me'));
+        await api(apiPath`/auth/staff/change-password`, { method: 'POST', body: { currentPassword: password, newPassword } });
+        go(await api<Profile>(apiPath`/auth/me`));
         return;
       }
-      const r = await api<{ mfaRequired?: boolean; user?: Profile }>('/auth/staff/login', {
+      const r = await api<{ mfaRequired?: boolean; user?: Profile }>(apiPath`/auth/staff/login`, {
         method: 'POST',
         body: { email, password, ...(needTotp ? { totpCode: totp } : {}) },
       });
@@ -56,6 +57,8 @@ function LoginForm() {
       go(r.user!);
     } catch (err) {
       setError(errorMessage(err));
+      // TOTP-код одноразовый (повтор отклоняется): после ошибки нужен новый код из приложения
+      if (needTotp) setTotp('');
     } finally {
       setBusy(false);
     }

@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Pager, Spinner, Table, Td, Textarea, statusTone } from '@/components/ui';
 import { formatPhone, money } from '@/lib/format';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface ClientRow {
   id: string;
@@ -40,7 +41,7 @@ export default function ClientsPage() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
-  const list = useApi<{ total: number; items: ClientRow[] }>(`${base}/clients?page=${page}&pageSize=${PAGE_SIZE}${q ? `&search=${encodeURIComponent(q)}` : ''}`);
+  const list = useApi<{ total: number; items: ClientRow[] }>(apiPath`${base}/clients${apiQuery({ page, pageSize: PAGE_SIZE, search: q })}`);
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
@@ -75,7 +76,7 @@ export default function ClientsPage() {
 function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: string; onClose: () => void; canEdit: boolean; isOwner: boolean; candidates: ClientRow[] }) {
   const { base } = useOrg();
   const { t, st } = useT();
-  const card = useApi<ClientCard>(`${base}/clients/${id}`);
+  const card = useApi<ClientCard>(apiPath`${base}/clients/${id}`);
   const [notes, setNotes] = useState<string | null>(null);
   const [mergeId, setMergeId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +97,7 @@ function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: strin
             <Field label={t('notes')}>
               <div className="flex gap-2">
                 <Textarea rows={2} value={notes ?? c.notes ?? ''} onChange={(e) => setNotes(e.target.value)} />
-                <Button variant="secondary" onClick={async () => { try { await api(`${base}/clients/${id}`, { method: 'PATCH', body: { notes: notes ?? '' } }); await card.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('save')}</Button>
+                <Button variant="secondary" onClick={async () => { try { await api(apiPath`${base}/clients/${id}`, { method: 'PATCH', body: { notes: notes ?? '' } }); await card.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('save')}</Button>
               </div>
             </Field>
           )}
@@ -119,8 +120,8 @@ function ClientDialog({ id, onClose, canEdit, isOwner, candidates }: { id: strin
                   {candidates.filter((x) => x.id !== id).map((x) => <option key={x.id} value={x.id}>{x.name} · {formatPhone(x.phone)}</option>)}
                 </select>
               </Field>
-              <Button variant="secondary" disabled={!mergeId} onClick={async () => { try { await api(`${base}/clients/merge`, { method: 'POST', body: { sourceClientId: mergeId, targetClientId: id } }); setMergeId(''); await card.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('merge')}</Button>
-              <Button variant="danger" onClick={async () => { if (!confirm(`${t('anonymize')}?`)) return; try { await api(`${base}/clients/${id}/anonymize`, { method: 'POST' }); onClose(); } catch (e) { setError(errorMessage(e)); } }}>{t('anonymize')}</Button>
+              <Button variant="secondary" disabled={!mergeId} onClick={async () => { try { await api(apiPath`${base}/clients/merge`, { method: 'POST', body: { sourceClientId: mergeId, targetClientId: id } }); setMergeId(''); await card.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('merge')}</Button>
+              <Button variant="danger" onClick={async () => { if (!confirm(`${t('anonymize')}?`)) return; try { await api(apiPath`${base}/clients/${id}/anonymize`, { method: 'POST' }); onClose(); } catch (e) { setError(errorMessage(e)); } }}>{t('anonymize')}</Button>
             </div>
           )}
         </div>

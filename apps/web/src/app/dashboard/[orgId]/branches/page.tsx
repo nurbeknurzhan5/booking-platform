@@ -6,6 +6,7 @@ import { useOrg } from '@/components/dashboard/OrgContext';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, statusTone } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 export default function BranchesPage() {
   const { org, branches, reloadBranches, isOwner, canManage } = useOrg();
@@ -40,7 +41,7 @@ export default function BranchesPage() {
             e.preventDefault();
             setError(null);
             try {
-              await api(`/organizations/${org.id}/branches`, {
+              await api(apiPath`/organizations/${org.id}/branches`, {
                 method: 'POST',
                 body: { name: form.name, address: form.address || undefined, phone: form.phone || undefined, slug: form.slug || undefined },
               });

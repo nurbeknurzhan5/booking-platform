@@ -7,7 +7,7 @@ import { AppError } from '../common/errors';
 import { NotificationDispatcher } from './dispatcher.service';
 import { NotificationService } from './notification.service';
 import { AuditService } from '../common/audit.service';
-import { getConfig } from '../config/config';
+import { devInboxEnabled, getConfig } from '../config/config';
 import { normalizePhone } from '@booking/shared';
 import type { NotificationStatus } from '../generated/prisma/client';
 
@@ -151,7 +151,7 @@ export class AdminNotificationsController {
   }
 }
 
-/** Входящие dev_inbox (только dev/test) — получение OTP в тестовой среде (§26.3). */
+/** Входящие dev_inbox (только dev/test при DEV_INBOX_ENABLED=true) — получение OTP в тестовой среде (§26.3). */
 @ApiTags('dev')
 @Public()
 @Controller('dev')
@@ -160,11 +160,12 @@ export class DevInboxController {
 
   /**
    * «Тестовый телефон» вместо WhatsApp на время разработки: без phone — последние сообщения всем номерам.
-   * В production недоступно (и канал dev_inbox там запрещён).
+   * Доступно только при явном DEV_INBOX_ENABLED=true и APP_ENV ≠ production, иначе 404
+   * (маршрут не раскрывается).
    */
   @Get('inbox')
   inbox(@Query('phone') phone?: string) {
-    if (getConfig().APP_ENV === 'production') throw AppError.notFound();
+    if (!devInboxEnabled()) throw AppError.notFound();
     if (!phone) return this.prisma.devInboxMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
     const p = normalizePhone(phone);
     if (!p) throw AppError.badRequest('VALIDATION_ERROR', 'Неверный номер');

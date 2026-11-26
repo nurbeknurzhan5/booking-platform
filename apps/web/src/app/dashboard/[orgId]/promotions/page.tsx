@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td } from '@/components/ui';
 import { money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Promotion {
   id: string;
@@ -37,8 +38,8 @@ const fromLocal = (v: string) => (v ? new Date(v).toISOString() : null);
 export default function PromotionsPage() {
   const { base, branches } = useOrg();
   const { t } = useT();
-  const list = useApi<Promotion[]>(`${base}/promotions`);
-  const services = useApi<Array<{ id: string; name: string }>>(`${base}/services`);
+  const list = useApi<Promotion[]>(apiPath`${base}/promotions`);
+  const services = useApi<Array<{ id: string; name: string }>>(apiPath`${base}/services`);
   const [edit, setEdit] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,8 +64,8 @@ export default function PromotionsPage() {
       showOnPage: edit.showOnPage ?? false,
     };
     try {
-      if (edit.id) await api(`${base}/promotions/${edit.id}`, { method: 'PUT', body });
-      else await api(`${base}/promotions`, { method: 'POST', body });
+      if (edit.id) await api(apiPath`${base}/promotions/${edit.id}`, { method: 'PUT', body });
+      else await api(apiPath`${base}/promotions`, { method: 'POST', body });
       setEdit(null);
       await list.reload();
     } catch (e) {
@@ -138,7 +139,7 @@ export default function PromotionsPage() {
               <Checkbox checked={edit.showOnPage ?? false} onChange={(e) => setEdit({ ...edit, showOnPage: e.target.checked })} label={t('showOnPage')} />
             </div>
             <div className="flex justify-between">
-              {edit.id ? <Button variant="danger" onClick={async () => { await api(`${base}/promotions/${edit.id}`, { method: 'DELETE' }); setEdit(null); await list.reload(); }}>{t('archive')}</Button> : <span />}
+              {edit.id ? <Button variant="danger" onClick={async () => { await api(apiPath`${base}/promotions/${edit.id!}`, { method: 'DELETE' }); setEdit(null); await list.reload(); }}>{t('archive')}</Button> : <span />}
               <Button onClick={save}>{t('save')}</Button>
             </div>
           </div>

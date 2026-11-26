@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService, type Tx } from '../common/prisma.service';
-import { AppError } from '../common/errors';
+import { AppError, isUniqueViolation } from '../common/errors';
 import {
   computeSlots,
   dayWindows,
@@ -49,6 +49,22 @@ export interface LoadOptions {
 export class AvailabilityService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Настройки записи филиала; у нового филиала создаются со значениями по умолчанию.
+   * Параллельные первые запросы не дают 500: при гонке вставки (23505) читается строка победителя.
+   */
+  async ensureSettings(db: Tx | PrismaService, branch: Pick<Branch, 'id' | 'organizationId'>): Promise<BookingSettings> {
+    const found = await db.bookingSettings.findUnique({ where: { branchId: branch.id } });
+    if (found) return found;
+    try {
+      return await db.bookingSettings.upsert({ where: { branchId: branch.id }, create: { branchId: branch.id, organizationId: branch.organizationId }, update: {} });
+    } catch (e) {
+      // В транзакции после ошибки повторный запрос невозможен — ошибку обработает вызывающий (повтор транзакции).
+      if (!isUniqueViolation(e) || db !== this.prisma) throw e;
+      return db.bookingSettings.findUniqueOrThrow({ where: { branchId: branch.id } });
+    }
+  }
+
   /** Полный контекст: настройки, каталог, расписания и занятость ресурсов. */
   async loadContext(db: Tx | PrismaService, branchId: string, date: string, items: RequestItem[], opts: LoadOptions): Promise<BookingContext> {
     const base = await this.loadStatic(db, branchId, date, items, opts);
@@ -67,9 +83,7 @@ export class AvailabilityService {
     if (!branch) throw AppError.notFound('Филиал');
 
     const serviceIds = [...new Set(items.map((i) => i.serviceId))];
-    const loadSettings = async () =>
-      (await db.bookingSettings.findUnique({ where: { branchId } })) ??
-      (await db.bookingSettings.upsert({ where: { branchId }, create: { branchId, organizationId: branch.organizationId }, update: {} }));
+    const loadSettings = () => this.ensureSettings(db, branch);
     const loadServices = () =>
       db.service.findMany({
         where: { id: { in: serviceIds }, organizationId: branch.organizationId, archivedAt: null, isActive: true },

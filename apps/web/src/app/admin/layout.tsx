@@ -7,6 +7,7 @@ import { DashI18nProvider, useT, type DashKey } from '@/lib/i18n-dashboard';
 import { StaffGate } from '@/components/dashboard/StaffContext';
 import { api } from '@/lib/api';
 import { cx } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 const NAV: Array<[string, DashKey]> = [
   ['/admin', 'systemStats'],
@@ -38,7 +39,7 @@ function Shell({ children }: { children: ReactNode }) {
         </nav>
         <div className="mt-4 hidden space-y-2 text-sm md:block">
           <button onClick={() => setLang(lang === 'ru' ? 'kk' : 'ru')}>🌐 {lang === 'ru' ? 'Қазақша' : 'Русский'}</button>
-          <button className="block" onClick={async () => { await api('/auth/logout', { method: 'POST' }); router.push('/login'); }}>⎋ {t('logout')}</button>
+          <button className="block" onClick={async () => { await api(apiPath`/auth/logout`, { method: 'POST' }); router.push('/login'); }}>⎋ {t('logout')}</button>
         </div>
       </aside>
       <main className="min-w-0 flex-1 p-4 sm:p-6">{children}</main>

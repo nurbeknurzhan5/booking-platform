@@ -11,6 +11,7 @@ import { Alert, Button, Card, Checkbox, Field, Input, PageHeader, Select, Spinne
 import { SpecialistsTab, ResourcesTab } from '@/components/dashboard/BranchStaffTabs';
 import { ScheduleTab } from '@/components/dashboard/ScheduleTab';
 import { MapPicker } from '@/components/dashboard/MapPicker';
+import { apiPath } from '@/lib/api-path';
 
 type Tab = 'settings' | 'rules' | 'specialists' | 'resources' | 'schedule';
 
@@ -34,7 +35,7 @@ export default function BranchDetailPage() {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>('settings');
   useEffect(() => setBranchId(branchId), [branchId, setBranchId]);
-  const branch = useApi<BranchFull>(`${base}/branches/${branchId}`);
+  const branch = useApi<BranchFull>(apiPath`${base}/branches/${branchId}`);
   if (branch.loading) return <Spinner />;
   if (!branch.data) return <Alert>{branch.error}</Alert>;
   const b = branch.data;
@@ -78,7 +79,7 @@ function BranchSettings({ branch, onSaved, canEdit }: { branch: BranchFull; onSa
           e.preventDefault();
           setMsg({});
           try {
-            await api(`${base}/branches/${branch.id}`, {
+            await api(apiPath`${base}/branches/${branch.id}`, {
               method: 'PATCH',
               body: {
                 name: f.name,
@@ -157,7 +158,7 @@ interface Rules {
 function BookingRules({ branchId }: { branchId: string }) {
   const { base } = useOrg();
   const { t } = useT();
-  const { data, setData } = useApi<Rules>(`${base}/branches/${branchId}/booking-settings`);
+  const { data, setData } = useApi<Rules>(apiPath`${base}/branches/${branchId}/booking-settings`);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
   if (!data) return <Spinner />;
   const num = (k: keyof Rules, label: Parameters<typeof t>[0]) => (
@@ -173,7 +174,7 @@ function BookingRules({ branchId }: { branchId: string }) {
           setMsg({});
           try {
             const { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry, scheduleMode } = data;
-            setData(await api<Rules>(`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry, scheduleMode } }));
+            setData(await api<Rules>(apiPath`${base}/branches/${branchId}/booking-settings`, { method: 'PUT', body: { slotIntervalMinutes, holdMinutes, holdExtensionAllowed, minLeadMinutes, maxHorizonDays, rescheduleDeadlineMinutes, cancelDeadlineMinutes, allowLateCancelException, maxActiveAppointmentsPerClient, allowRebookWithActive, adminCanOverrideClientLimits, multiServiceMode, loadBalancing, specialistPricingEnabled, reminderHoursBefore, onlineBookingEnabled, waitlistEnabled, waitlistOfferMinutes, waitlistRecipients, waitlistPriority, waitlistAfterExpiry, scheduleMode } }));
             setMsg({ ok: t('saved') });
           } catch (err) {
             setMsg({ err: errorMessage(err) });
@@ -260,7 +261,7 @@ function ArchiveBranch({ branch }: { branch: BranchFull }) {
           if (!confirm(`${t('archiveBranch')}: ${branch.name}?`)) return;
           setErr(null);
           try {
-            await api(`${base}/branches/${branch.id}`, { method: 'DELETE' });
+            await api(apiPath`${base}/branches/${branch.id}`, { method: 'DELETE' });
             await reloadBranches();
             router.push(`/dashboard/${org.id}/branches`);
           } catch (e) {

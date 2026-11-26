@@ -35,11 +35,54 @@ export function updateSchemaOf<T extends z.ZodRawShape>(schema: z.ZodObject<T>) 
 export const zId = z.uuid();
 export const zLocale = z.enum(LOCALES);
 export const zDashboardLocale = z.enum(DASHBOARD_LOCALES);
-export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ожидается дата YYYY-MM-DD');
+/** Допустимый диапазон лет для дат и моментов времени: защищает от года 0000 и сдвигов при пересчёте в БД. */
+export const MIN_DATE_YEAR = 1900;
+export const MAX_DATE_YEAR = 2999;
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+/** Существующая календарная дата YYYY-MM-DD (2026-02-31, 2026-13-01, 2025-02-29 — нет). */
+export function isValidIsoDate(value: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (year < MIN_DATE_YEAR || year > MAX_DATE_YEAR) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= daysInMonth(year, month);
+}
+
+/**
+ * Начало периода строго раньше конца. ISO-строки с разными смещениями нельзя сравнивать как строки:
+ * `2026-12-01T10:00:00+05:00` (05:00Z) раньше `2026-12-01T06:00:00Z`, хотя строка «больше».
+ */
+export function isIsoPeriodValid(startsAt: string, endsAt: string): boolean {
+  const start = Date.parse(startsAt);
+  const end = Date.parse(endsAt);
+  return Number.isFinite(start) && Number.isFinite(end) && start < end;
+}
+
+export const zDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Ожидается дата YYYY-MM-DD')
+  // Формат проверяет regex выше; здесь — только существование даты, чтобы не дублировать ошибку.
+  .refine((v) => !/^\d{4}-\d{2}-\d{2}$/.test(v) || isValidIsoDate(v), 'Такой даты не существует');
+/** Время HH:MM; `24:00` допустимо только как конец интервала (начало < конец проверяется в интервале). */
 export const zTime = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$|^24:00$/, 'Ожидается время HH:MM');
-export const zDateTime = z.iso.datetime({ offset: true });
+export const zDateTime = z.iso
+  .datetime({ offset: true })
+  // Формат и календарь проверяет z.iso.datetime; здесь — диапазон лет (год 0000 ломает запись в PostgreSQL).
+  .refine((v) => {
+    if (!/^\d{4}-/.test(v)) return true;
+    const year = Number(v.slice(0, 4));
+    return year >= MIN_DATE_YEAR && year <= MAX_DATE_YEAR && Number.isFinite(Date.parse(v));
+  }, `Дата вне допустимого диапазона (${MIN_DATE_YEAR}–${MAX_DATE_YEAR})`);
 export const zMoney = z.number().int().min(0).max(100_000_000);
 export const zMinutes = z.number().int().min(0).max(24 * 60);
 export const zHttpUrl = z.string().max(500).refine(isSafeHttpUrl, 'Допустимы только http(s)-ссылки');
@@ -507,7 +550,7 @@ export const PromotionInputSchema = z
     message: 'Процент не больше 100',
     path: ['discountValue'],
   })
-  .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, { message: 'Неверный период', path: ['endsAt'] });
+  .refine((v) => !v.startsAt || !v.endsAt || isIsoPeriodValid(v.startsAt, v.endsAt), { message: 'Неверный период', path: ['endsAt'] });
 
 // ---------- публичные страницы ----------
 export const SocialLinkSchema = z.object({
@@ -652,6 +695,7 @@ export const CreateOrganizationSchema = z.object({
       endsAt: zDateTime,
       graceDays: z.number().int().min(0).max(90).default(7),
     })
+    .refine((v) => isIsoPeriodValid(v.startsAt, v.endsAt), { message: 'Неверный период', path: ['endsAt'] })
     .optional(),
 });
 export const AdminUpdateOrganizationSchema = z.object({
@@ -670,7 +714,7 @@ export const SetSubscriptionSchema = z
     graceDays: z.number().int().min(0).max(90).default(7),
     note: z.string().max(500).optional(),
   })
-  .refine((v) => v.startsAt < v.endsAt, { message: 'Неверный период', path: ['endsAt'] });
+  .refine((v) => isIsoPeriodValid(v.startsAt, v.endsAt), { message: 'Неверный период', path: ['endsAt'] });
 
 export const RecordPaymentSchema = z.object({
   amount: zMoney,

@@ -63,7 +63,8 @@ export interface AccessGrant {
 export function hasPermission(grant: AccessGrant, permission: Permission, branchId?: string): boolean {
   if (grant.role === 'OWNER') return true;
   if (!isBranchPermission(permission)) return false;
-  if (branchId) return (grant.branchPermissions[branchId] ?? []).includes(permission);
+  // Только собственные ключи: branchId вида `constructor`/`__proto__` не должен попадать в Object.prototype (TypeError → 500).
+  if (branchId) return Object.hasOwn(grant.branchPermissions, branchId) && (grant.branchPermissions[branchId] ?? []).includes(permission);
   return Object.values(grant.branchPermissions).some((perms) => perms.includes(permission));
 }
 

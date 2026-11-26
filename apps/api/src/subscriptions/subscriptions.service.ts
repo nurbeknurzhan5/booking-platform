@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { computeSubscriptionStatus, graceEndsAt, RecordPaymentSchema, SetSubscriptionSchema } from '@booking/shared';
+import { computeSubscriptionStatus, graceEndsAt, isIsoPeriodValid, RecordPaymentSchema, SetSubscriptionSchema } from '@booking/shared';
 import { PrismaService, type Tx } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { AuditService } from '../common/audit.service';
@@ -9,6 +9,18 @@ import type { Prisma, Subscription } from '../generated/prisma/client';
 
 type SetSubscription = z.infer<typeof SetSubscriptionSchema>;
 type RecordPayment = z.infer<typeof RecordPaymentSchema>;
+
+/**
+ * Период подписки: начало строго раньше конца, сравнение моментов времени, а не строк
+ * (защита в глубину: сервис вызывается и из создания организации, и из других модулей).
+ */
+export function assertSubscriptionPeriod(startsAt: string, endsAt: string): void {
+  if (!isIsoPeriodValid(startsAt, endsAt)) {
+    throw AppError.badRequest('VALIDATION_ERROR', 'Дата окончания подписки должна быть позже даты начала', [
+      { path: 'endsAt', message: 'Неверный период', code: 'custom' },
+    ]);
+  }
+}
 
 function snapshot(s: Subscription): Prisma.InputJsonValue {
   return {
@@ -55,6 +67,7 @@ export class SubscriptionsService {
   }
 
   async set(organizationId: string, input: SetSubscription, actor: ActorContext, tx?: Tx) {
+    assertSubscriptionPeriod(input.startsAt, input.endsAt);
     const run = async (db: Tx) => {
       const plan = await db.plan.findUnique({ where: { id: input.planId } });
       if (!plan) throw AppError.notFound('Тариф');

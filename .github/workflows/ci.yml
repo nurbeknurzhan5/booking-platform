@@ -36,6 +36,8 @@ jobs:
       DATABASE_URL: postgresql://booking_app:ci_only_password@localhost:5432/booking_unused?schema=public
       TEST_DATABASE_URL: postgresql://booking_app:ci_only_password@localhost:5432/booking_test?schema=public
       NOTIFICATION_CHANNELS: dev_inbox
+      # «Тестовый телефон» включается только явным флагом (тестам он нужен: OTP и ссылки читаются из dev_inbox)
+      DEV_INBOX_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -61,3 +63,28 @@ jobs:
       - run: npm run typecheck
       - name: Unit и integration-тесты
         run: npm test
+
+  # Образы production и конфигурация docker compose (без запуска контейнеров).
+  docker:
+    name: Docker-образы и compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Проверка docker-compose.prod.yml с примером переменных
+        run: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod.example config --quiet
+      - name: Образ API и воркера
+        run: docker build -f infra/docker/api.Dockerfile -t booking-api:ci .
+      - name: Образ сайта
+        run: docker build -f infra/docker/web.Dockerfile -t booking-web:ci .
+      - name: Fail-closed конфигурация в образе API
+        run: |
+          # NODE_ENV=production (задан в образе) без APP_ENV: API и воркер завершаются с ошибкой конфигурации
+          for entry in dist/main.js dist/worker.js; do
+            set +e
+            out="$(timeout 60 docker run --rm booking-api:ci node "$entry" 2>&1)"
+            code=$?
+            set -e
+            echo "$entry -> exit $code"; echo "$out" | tail -n 3
+            [ "$code" -ne 0 ] && [ "$code" -ne 124 ] && echo "$out" | grep -q 'APP_ENV' || { echo "$entry стартовал без APP_ENV"; exit 1; }
+          done

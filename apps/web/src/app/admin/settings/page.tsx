@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { errorMessage } from '@/lib/api';
 import { withMfa } from '@/components/admin/mfa';
 import { Alert, Button, Card, Field, Input, PageHeader, Spinner } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Settings {
   otpTtlSeconds: number;
@@ -19,7 +20,7 @@ interface Settings {
 
 export default function SystemSettingsPage() {
   const { t } = useT();
-  const { data, setData } = useApi<Settings>('/admin/settings');
+  const { data, setData } = useApi<Settings>(apiPath`/admin/settings`);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
   if (!data) return <Spinner />;
   return (
@@ -32,7 +33,7 @@ export default function SystemSettingsPage() {
             e.preventDefault();
             setMsg({});
             try {
-              const r = await withMfa<Settings>('/admin/settings', { method: 'PUT', body: data });
+              const r = await withMfa<Settings>(apiPath`/admin/settings`, { method: 'PUT', body: data });
               if (r) {
                 setData(r);
                 setMsg({ ok: t('saved') });

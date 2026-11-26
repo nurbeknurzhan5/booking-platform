@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { errorMessage } from '@/lib/api';
 import { withMfa } from '@/components/admin/mfa';
 import { Alert, Badge, Button, Card, Input, PageHeader, Spinner, Table, Td } from '@/components/ui';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface U {
   id: string;
@@ -21,7 +22,7 @@ interface U {
 export default function AdminUsers() {
   const { t } = useT();
   const [s, setS] = useState('');
-  const list = useApi<U[]>(`/admin/users${s ? `?search=${encodeURIComponent(s)}` : ''}`);
+  const list = useApi<U[]>(apiPath`/admin/users${apiQuery({ search: s })}`);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** Восстановление доступа (§3.4): временный пароль сообщается сотруднику лично, при входе он его сменит. */
@@ -33,7 +34,7 @@ export default function AdminUsers() {
     setError(null);
     setNotice(null);
     try {
-      await withMfa(`/admin/users/${u.id}/reset-password`, { method: 'POST', body: { temporaryPassword, reason } });
+      await withMfa(apiPath`/admin/users/${u.id}/reset-password`, { method: 'POST', body: { temporaryPassword, reason } });
       setNotice(t('passwordResetDone'));
       await list.reload();
     } catch (e) {
@@ -45,7 +46,7 @@ export default function AdminUsers() {
     if (!reason) return;
     setError(null);
     try {
-      await withMfa(`/admin/users/${u.id}/${u.blockedAt ? 'unblock' : 'block'}`, { method: 'POST', body: { reason } });
+      await withMfa(apiPath`/admin/users/${u.id}/${u.blockedAt ? 'unblock' : 'block'}`, { method: 'POST', body: { reason } });
       await list.reload();
     } catch (e) {
       setError(errorMessage(e));

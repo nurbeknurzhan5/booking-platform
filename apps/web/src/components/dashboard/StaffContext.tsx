@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { Spinner } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 export interface StaffProfile {
   id: string;
@@ -27,7 +28,7 @@ export function StaffGate({ children, requireSuperadmin }: { children: ReactNode
   const router = useRouter();
   const [me, setMe] = useState<StaffProfile | null>(null);
   useEffect(() => {
-    api<StaffProfile>('/auth/me')
+    api<StaffProfile>(apiPath`/auth/me`)
       .then((p) => {
         if (p.sessionKind !== 'staff' || p.mustChangePassword || (requireSuperadmin && !p.isSuperadmin)) router.replace('/login');
         else setMe(p);

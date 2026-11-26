@@ -6,6 +6,7 @@ import { api, ApiError } from '@/lib/api';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { dateTime, money } from '@/lib/format';
 import type { AppointmentView } from '@/lib/types';
+import { apiPath } from '@/lib/api-path';
 
 type State = { kind: 'loading' } | { kind: 'ok'; appointment: AppointmentView; manageToken: string } | { kind: 'error'; message: PublicKey; slug?: string };
 
@@ -21,7 +22,7 @@ export function ConfirmClient({ token, lang }: { token: string; lang: string }) 
   useEffect(() => {
     if (sent.current) return;
     sent.current = true;
-    api<{ appointment: AppointmentView; manageToken: string }>('/public/bookings/confirm-link', { method: 'POST', body: { token } })
+    api<{ appointment: AppointmentView; manageToken: string }>(apiPath`/public/bookings/confirm-link`, { method: 'POST', body: { token } })
       .then((r) => setState({ kind: 'ok', ...r }))
       .catch((e) => {
         const code = e instanceof ApiError ? e.code : '';

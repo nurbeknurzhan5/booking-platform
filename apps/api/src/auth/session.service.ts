@@ -29,6 +29,12 @@ export class SessionService {
     req: Request,
     res: Response,
   ): Promise<void> {
+    // Ротация: прежняя сессия из cookie этого браузера отзывается (повторный вход, смена учётной записи,
+    // навязанная cookie — session fixation), иначе её токен оставался бы действительным.
+    const previous = (req.cookies as Record<string, string> | undefined)?.[SESSION_COOKIE];
+    if (previous && previous.length <= 100) {
+      await this.prisma.userSession.updateMany({ where: { tokenHash: sha256(previous), revokedAt: null }, data: { revokedAt: new Date() } });
+    }
     const token = randomToken(32);
     const expiresAt = new Date(Date.now() + POLICY[kind].idleMs);
     await this.prisma.userSession.create({
@@ -103,8 +109,9 @@ export class SessionService {
   }
 
   clearCookies(res: Response): void {
-    res.clearCookie(SESSION_COOKIE, { path: '/' });
-    res.clearCookie(CSRF_COOKIE, { path: '/' });
+    const secure = getConfig().COOKIE_SECURE;
+    res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure, sameSite: 'lax', path: '/' });
+    res.clearCookie(CSRF_COOKIE, { secure, sameSite: 'lax', path: '/' });
   }
 
   async cleanupExpired(): Promise<number> {

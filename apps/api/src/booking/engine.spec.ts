@@ -80,6 +80,19 @@ describe('расписание на дату (часовой пояс филиа
     expect(dayWindows(custom, DATE, TZ)).toEqual([iv('12:00', '15:00')]);
   });
 
+  it('пересекающиеся особые часы: действует самый узкий диапазон независимо от порядка строк', () => {
+    const wide = { dateFrom: '2026-12-01', dateTo: '2026-12-31', kind: 'custom_hours' as const, intervals: [{ start: 600, end: 1200 }] };
+    const day = { dateFrom: DATE, dateTo: DATE, kind: 'custom_hours' as const, intervals: [{ start: 720, end: 900 }] };
+    const week = { dateFrom: '2026-12-05', dateTo: '2026-12-11', kind: 'custom_hours' as const, intervals: [{ start: 660, end: 960 }] };
+    for (const exceptions of [[wide, week, day], [day, wide, week], [week, day, wide]]) {
+      expect(dayWindows({ ...weekly(600, 1200), exceptions }, DATE, TZ)).toEqual([iv('12:00', '15:00')]);
+    }
+    expect(dayWindows({ ...weekly(600, 1200), exceptions: [wide, week] }, DATE, TZ)).toEqual([iv('11:00', '16:00')]);
+    // «закрыто» важнее любых особых часов
+    const closed = { dateFrom: '2026-12-01', dateTo: '2026-12-31', kind: 'closed' as const, intervals: [] };
+    expect(dayWindows({ ...weekly(600, 1200), exceptions: [day, closed] }, DATE, TZ)).toEqual([]);
+  });
+
   it('выходной день недели без интервалов', () => {
     const src: ScheduleSource = { hours: [{ weekday: 2, start: 600, end: 1200 }], breaks: [], exceptions: [] };
     expect(dayWindows(src, DATE, TZ)).toEqual([]);

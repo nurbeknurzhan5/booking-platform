@@ -96,7 +96,7 @@ export function MapBlock({
           {!key && DEV_TILES && visible && (
             <iframe
               title={title ?? '2GIS'}
-              src={`/embed/map?lat=${map.latitude}&lng=${map.longitude}&title=${encodeURIComponent(title ?? '')}`}
+              src={`/embed/map?${new URLSearchParams({ lat: String(map.latitude), lng: String(map.longitude), title: title ?? '' })}`}
               className="h-full w-full border-0"
               loading="lazy"
             />

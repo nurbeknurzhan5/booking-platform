@@ -6,6 +6,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Input, PageHeader, Spinner, statusTone } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Review {
   id: string;
@@ -23,7 +24,7 @@ interface Review {
 export default function ReviewsPage() {
   const { base, branch } = useOrg();
   const { t, st } = useT();
-  const list = useApi<Review[]>(branch ? `${base}/reviews?branchId=${branch.id}` : null);
+  const list = useApi<Review[]>(branch ? apiPath`${base}/reviews?branchId=${branch.id}` : null);
   const [reply, setReply] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   return (
@@ -49,9 +50,9 @@ export default function ReviewsPage() {
               {r.reply && <p className="mt-2 border-l-2 border-brand-500 pl-2 text-sm text-slate-700">{r.reply}</p>}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Input value={reply[r.id] ?? ''} onChange={(e) => setReply({ ...reply, [r.id]: e.target.value })} placeholder={t('reply')} className="max-w-md" />
-                <Button size="sm" disabled={!reply[r.id]} onClick={async () => { try { await api(`${base}/reviews/${r.id}/reply`, { method: 'POST', body: { text: reply[r.id] } }); setReply({ ...reply, [r.id]: '' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('reply')}</Button>
+                <Button size="sm" disabled={!reply[r.id]} onClick={async () => { try { await api(apiPath`${base}/reviews/${r.id}/reply`, { method: 'POST', body: { text: reply[r.id] } }); setReply({ ...reply, [r.id]: '' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('reply')}</Button>
                 {!r.reportedAt && (
-                  <Button size="sm" variant="ghost" onClick={async () => { const reason = prompt(t('reason')); if (!reason) return; try { await api(`${base}/reviews/${r.id}/report`, { method: 'POST', body: { reason } }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('report')}</Button>
+                  <Button size="sm" variant="ghost" onClick={async () => { const reason = prompt(t('reason')); if (!reason) return; try { await api(apiPath`${base}/reviews/${r.id}/report`, { method: 'POST', body: { reason } }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('report')}</Button>
                 )}
               </div>
             </Card>

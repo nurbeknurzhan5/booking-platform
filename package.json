@@ -29,6 +29,9 @@
     "prettier": "^3.10.1",
     "typescript-eslint": "^8.73.0"
   },
+  "overrides": {
+    "effect": "^3.22.1"
+  },
   "allowScripts": {
     "@swc/core@1.16.22": true,
     "argon2@0.45.2": true,

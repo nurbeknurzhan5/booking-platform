@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { Card, Input, PageHeader, Spinner, Table, Td } from '@/components/ui';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface Row {
   id: string;
@@ -20,7 +21,7 @@ interface Row {
 export default function AuditPage() {
   const { t } = useT();
   const [action, setAction] = useState('');
-  const { data, loading } = useApi<Row[]>(`/admin/audit-logs${action ? `?action=${encodeURIComponent(action)}` : ''}`);
+  const { data, loading } = useApi<Row[]>(apiPath`/admin/audit-logs${apiQuery({ action })}`);
   return (
     <div>
       <PageHeader title={t('audit')} />

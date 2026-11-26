@@ -1,3 +1,4 @@
+import { apiPath } from '@/lib/api-path';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
@@ -15,7 +16,7 @@ type Params = Promise<{ locale: string; slug: string }>;
  */
 const load = cache(async (locale: string, slug: string) => {
   if (!isLang(locale) || !/^[a-z0-9-]{3,60}$/.test(slug)) notFound();
-  return serverGet<PublicPageData>(`/public/pages/${slug}?locale=${locale}`);
+  return serverGet<PublicPageData>(apiPath`/public/pages/${slug}?locale=${locale}`);
 });
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {

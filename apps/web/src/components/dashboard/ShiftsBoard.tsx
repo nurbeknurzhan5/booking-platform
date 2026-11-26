@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, ApiError, errorMessage } from '@/lib/api';
 import { Alert, Button, Card, Field, Input, Modal, Spinner, cx } from '@/components/ui';
 import { addDays, dateTime, formatPhone, localISODate, weekdayName } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Shift {
   id: string;
@@ -70,8 +71,8 @@ export function ShiftsBoard({ branchId }: { branchId: string }) {
   const today = localISODate(new Date(), tz);
   const [from, setFrom] = useState(today);
   const to = addDays(from, DAYS - 1);
-  const data = useApi<ShiftsData>(`${base}/branches/${branchId}/shifts?from=${from}&to=${to}`);
-  const status = useApi<Status>(`${base}/branches/${branchId}/shifts/status`);
+  const data = useApi<ShiftsData>(apiPath`${base}/branches/${branchId}/shifts?from=${from}&to=${to}`);
+  const status = useApi<Status>(apiPath`${base}/branches/${branchId}/shifts/status`);
   const canEdit = can('schedules.manage', branchId) && canManage;
   const [edit, setEdit] = useState<{ resourceId: string; name: string; date: string; start: string; end: string; brk: boolean; bStart: string; bEnd: string; exists: boolean } | null>(null);
   const [conflicts, setConflicts] = useState<{ items: Conflict[]; action: 'save' | 'remove' } | null>(null);
@@ -108,7 +109,7 @@ export function ShiftsBoard({ branchId }: { branchId: string }) {
     setErr(null);
     try {
       if (action === 'save') {
-        await api(`${base}/branches/${branchId}/shifts`, {
+        await api(apiPath`${base}/branches/${branchId}/shifts`, {
           method: 'PUT',
           body: {
             resourceId: edit.resourceId,
@@ -121,7 +122,7 @@ export function ShiftsBoard({ branchId }: { branchId: string }) {
           },
         });
       } else {
-        await api(`${base}/branches/${branchId}/shifts/remove`, { method: 'POST', body: { resourceId: edit.resourceId, date: edit.date, force } });
+        await api(apiPath`${base}/branches/${branchId}/shifts/remove`, { method: 'POST', body: { resourceId: edit.resourceId, date: edit.date, force } });
       }
       setEdit(null);
       setConflicts(null);
@@ -172,7 +173,7 @@ export function ShiftsBoard({ branchId }: { branchId: string }) {
           <Button size="sm" variant="secondary" onClick={() => setFrom(addDays(from, 7))} aria-label="→">→</Button>
           {canEdit && (
             <div className="ml-auto flex flex-wrap gap-2">
-              <Button size="sm" variant="secondary" data-testid="fill-weekly" onClick={() => run(() => api(`${base}/branches/${branchId}/shifts/fill`, { method: 'POST', body: { from, to } }))}>
+              <Button size="sm" variant="secondary" data-testid="fill-weekly" onClick={() => run(() => api(apiPath`${base}/branches/${branchId}/shifts/fill`, { method: 'POST', body: { from, to } }))}>
                 {t('fillFromWeekly')}
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setCopy({ fromDate: today, toFrom: addDays(today, 1), toTo: addDays(today, 7) })}>{t('copyDay')}</Button>
@@ -276,7 +277,7 @@ export function ShiftsBoard({ branchId }: { branchId: string }) {
               e.preventDefault();
               const toDates: string[] = [];
               for (let x = copy.toFrom; x <= copy.toTo && toDates.length < 62; x = addDays(x, 1)) toDates.push(x);
-              void run(() => api(`${base}/branches/${branchId}/shifts/copy`, { method: 'POST', body: { fromDate: copy.fromDate, toDates } })).then(() => setCopy(null));
+              void run(() => api(apiPath`${base}/branches/${branchId}/shifts/copy`, { method: 'POST', body: { fromDate: copy.fromDate, toDates } })).then(() => setCopy(null));
             }}
           >
             <Field label={t('copyFrom')}><Input type="date" value={copy.fromDate} onChange={(e) => setCopy({ ...copy, fromDate: e.target.value })} /></Field>

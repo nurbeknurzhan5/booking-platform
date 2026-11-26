@@ -7,6 +7,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Modal, PageHeader, Spinner, cx } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Scheme {
   key: string;
@@ -52,9 +53,9 @@ function ThemePreview({ src, mobile }: { src: string; mobile?: boolean }) {
 export default function ThemesPage() {
   const { base, org, branch, can, canManage } = useOrg();
   const { t } = useT();
-  const themes = useApi<Theme[]>('/templates');
+  const themes = useApi<Theme[]>(apiPath`/templates`);
   const orgInfo = useApi<{ businessCategory: { code: string } | null }>(base);
-  const editor = useApi<Editor>(branch ? `${base}/branches/${branch.id}/page` : null);
+  const editor = useApi<Editor>(branch ? apiPath`${base}/branches/${branch.id}/page` : null);
   const [filter, setFilter] = useState<Filter>('all');
   const [scheme, setScheme] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Theme | null>(null);
@@ -77,7 +78,7 @@ export default function ThemesPage() {
     setMsg({});
     try {
       const d = editor.data.draft;
-      await api(`${base}/branches/${branch!.id}/page/draft`, {
+      await api(apiPath`${base}/branches/${branch!.id}/page/draft`, {
         method: 'PUT',
         body: {
           content: d.content,
@@ -88,7 +89,7 @@ export default function ThemesPage() {
         },
       });
       if (confirm(t('themePublishNow'))) {
-        await api(`${base}/branches/${branch!.id}/page/publish`, { method: 'POST' });
+        await api(apiPath`${base}/branches/${branch!.id}/page/publish`, { method: 'POST' });
         setMsg({ ok: `${x.name}: ${t('themePublished')}` });
       } else setMsg({ ok: `${x.name}: ${t('themeSavedDraft')}` });
       setOpen(null);

@@ -9,6 +9,7 @@ import { Alert, Button, Checkbox, Field, Input, Modal, Select, Textarea } from '
 import { SlotPicker } from '@/components/public/SlotPicker';
 import type { SlotsResponse } from '@/lib/types';
 import { dateTime, minutesLabel, money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 export interface ServiceRow {
   id: string;
@@ -29,8 +30,8 @@ export interface SpecialistRow {
 export function NewAppointmentDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
   const { base, branch } = useOrg();
   const { t } = useT();
-  const services = useApi<ServiceRow[]>(branch ? `${base}/services?branchId=${branch.id}` : null);
-  const specialists = useApi<SpecialistRow[]>(branch ? `${base}/branches/${branch.id}/specialists` : null);
+  const services = useApi<ServiceRow[]>(branch ? apiPath`${base}/services?branchId=${branch.id}` : null);
+  const specialists = useApi<SpecialistRow[]>(branch ? apiPath`${base}/branches/${branch.id}/specialists` : null);
   const [selected, setSelected] = useState<string[]>([]);
   const [spec, setSpec] = useState<Record<string, string>>({});
   const [slot, setSlot] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export function NewAppointmentDialog({ open, onClose, onCreated }: { open: boole
   const [busy, setBusy] = useState(false);
   const items = useMemo(() => selected.map((serviceId) => ({ serviceId, specialistId: spec[serviceId] || null })), [selected, spec]);
   const fetchSlots = useCallback(
-    (date: string) => api<SlotsResponse>(`${base}/availability`, { method: 'POST', body: { branchId: branch!.id, date, items } }),
+    (date: string) => api<SlotsResponse>(apiPath`${base}/availability`, { method: 'POST', body: { branchId: branch!.id, date, items } }),
     [base, branch, items],
   );
   if (!branch) return null;
@@ -98,7 +99,7 @@ export function NewAppointmentDialog({ open, onClose, onCreated }: { open: boole
               setBusy(true);
               setError(null);
               try {
-                await api(`${base}/appointments`, {
+                await api(apiPath`${base}/appointments`, {
                   method: 'POST',
                   idempotencyKey: newIdempotencyKey(),
                   body: { branchId: branch.id, startAt: slot, items, client: { name, phone }, comment: comment || undefined, overrideClientLimits: override },
@@ -143,7 +144,7 @@ export function AppointmentActionsDialog({ appt, onClose, onChanged }: { appt: A
   const [busy, setBusy] = useState(false);
   const fetchSlots = useCallback(
     (date: string) =>
-      api<SlotsResponse>(`${base}/availability`, {
+      api<SlotsResponse>(apiPath`${base}/availability`, {
         method: 'POST',
         body: { branchId: appt!.branchId, date, items: appt!.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId })), excludeAppointmentId: appt!.id },
       }),
@@ -154,7 +155,7 @@ export function AppointmentActionsDialog({ appt, onClose, onChanged }: { appt: A
     setBusy(true);
     setError(null);
     try {
-      await api(`${base}/appointments/${appt.id}/status`, { method: 'POST', idempotencyKey: newIdempotencyKey(), body: { status: s, reason: reason || undefined } });
+      await api(apiPath`${base}/appointments/${appt.id}/status`, { method: 'POST', idempotencyKey: newIdempotencyKey(), body: { status: s, reason: reason || undefined } });
       onChanged();
       onClose();
     } catch (e) {
@@ -201,7 +202,7 @@ export function AppointmentActionsDialog({ appt, onClose, onChanged }: { appt: A
             onSelect={async (s) => {
               setError(null);
               try {
-                await api(`${base}/appointments/${appt.id}/reschedule`, { method: 'POST', idempotencyKey: newIdempotencyKey(), body: { startAt: s.startAt } });
+                await api(apiPath`${base}/appointments/${appt.id}/reschedule`, { method: 'POST', idempotencyKey: newIdempotencyKey(), body: { startAt: s.startAt } });
                 onChanged();
                 setMode('menu');
                 onClose();

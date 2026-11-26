@@ -6,6 +6,7 @@ import { useOrg } from '@/components/dashboard/OrgContext';
 import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { Alert, Badge, Card, PageHeader, Spinner, Table, Td } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Delivery {
   sent: number;
@@ -31,7 +32,7 @@ interface Integrations {
 export default function IntegrationsPage() {
   const { base, org } = useOrg();
   const { t } = useT();
-  const { data, loading, error } = useApi<Integrations>(`${base}/integrations`);
+  const { data, loading, error } = useApi<Integrations>(apiPath`${base}/integrations`);
   const settingsHref = `/dashboard/${org.id}/settings`;
 
   const state = (ok: boolean, onLabel = t('integrationOn'), offLabel = t('integrationOff')) => (

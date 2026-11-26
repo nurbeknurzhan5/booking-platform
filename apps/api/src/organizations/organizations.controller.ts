@@ -182,7 +182,7 @@ export class OrganizationsController {
   @Put('users/:userId/access')
   @RequirePermission('users.manage')
   @ApiOperation({ summary: 'Выдать/отозвать права администратора по филиалам' })
-  updateAccess(@Tenant() t: TenantContext, @Param('userId') userId: string, @Body() body: UpdateAccessDto, @Actor() actor: ActorContext) {
+  updateAccess(@Tenant() t: TenantContext, @Param('userId', ParseUUIDPipe) userId: string, @Body() body: UpdateAccessDto, @Actor() actor: ActorContext) {
     return this.staff.updateAccess(t.organizationId, userId, body.branchAccess, actor);
   }
 
@@ -190,7 +190,7 @@ export class OrganizationsController {
   @HttpCode(204)
   @RequirePermission('users.manage')
   @ApiOperation({ summary: 'Отозвать доступ сотрудника' })
-  revokeStaff(@Tenant() t: TenantContext, @Param('userId') userId: string, @Actor() actor: ActorContext) {
+  revokeStaff(@Tenant() t: TenantContext, @Param('userId', ParseUUIDPipe) userId: string, @Actor() actor: ActorContext) {
     return this.staff.revoke(t.organizationId, userId, actor, { allowOwner: t.isSuperadmin });
   }
 

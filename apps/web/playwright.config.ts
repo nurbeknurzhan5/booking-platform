@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// TRUST_PROXY=0: браузер → Next.js → API без перезаписывающего прокси, X-Forwarded-For не доверяем (D-54).
+const DEV_INBOX_ENV = { DEV_INBOX_ENABLED: 'true', NEXT_PUBLIC_DEV_INBOX_ENABLED: 'true', TRUST_PROXY: '0' };
+
 /**
  * E2E (§26.3). Требует запущенные API (:4000), воркер и веб (:3000) с демо-данными:
  *   npm run db:seed -- --demo; npm run dev:api; npm run dev:worker; npm run dev:web
@@ -28,11 +31,14 @@ export default defineConfig({
     { name: 'tablet', use: { ...devices['Galaxy Tab S4'] } }, // планшет, сенсорный ввод
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
   ],
+  // «Тестовый телефон» (решение: только явным флагом). API читает DEV_INBOX_ENABLED при запуске; веб-флаг
+  // NEXT_PUBLIC_DEV_INBOX_ENABLED подставляется при сборке, поэтому next build для E2E тоже идёт с ним (e2e.yml, setup.sh).
+  // Если сайт собран без флага, global-setup остановит прогон с понятной ошибкой.
   webServer: process.env.CI
     ? [
-        { command: 'npm run start -w @booking/api', url: 'http://localhost:4000/api/v1/health', cwd: '../..', reuseExistingServer: true, timeout: 120_000 },
-        { command: 'npm run worker -w @booking/api', cwd: '../..', reuseExistingServer: true, timeout: 120_000, url: 'http://localhost:4000/api/v1/health' },
-        { command: 'npm run start', url: 'http://localhost:3000', reuseExistingServer: true, timeout: 120_000 },
+        { command: 'npm run start -w @booking/api', url: 'http://localhost:4000/api/v1/health', cwd: '../..', reuseExistingServer: true, timeout: 120_000, env: DEV_INBOX_ENV },
+        { command: 'npm run worker -w @booking/api', cwd: '../..', reuseExistingServer: true, timeout: 120_000, url: 'http://localhost:4000/api/v1/health', env: DEV_INBOX_ENV },
+        { command: 'npm run start', url: 'http://localhost:3000', reuseExistingServer: true, timeout: 120_000, env: DEV_INBOX_ENV },
       ]
     : undefined,
 });

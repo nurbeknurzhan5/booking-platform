@@ -2,16 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from './api';
+import type { ApiPath } from './api-path';
 
 /** Загрузка данных с API: { data, error, loading, reload }. path = null — не загружать. */
-export function useApi<T>(path: string | null) {
+export function useApi<T>(apiPathOrNull: ApiPath | null) {
+  // ApiPath создаётся заново при каждом рендере: перезагрузка — только при смене самой строки пути
+  const key = apiPathOrNull === null ? null : apiPathOrNull.toString();
+  const pathRef = useRef(apiPathOrNull);
+  pathRef.current = apiPathOrNull;
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(!!path);
+  const [loading, setLoading] = useState<boolean>(!!apiPathOrNull);
   const seq = useRef(0);
 
   const reload = useCallback(async () => {
-    if (!path) return;
+    const path = pathRef.current;
+    if (!key || !path) return;
     const id = ++seq.current;
     setLoading(true);
     try {
@@ -25,7 +31,7 @@ export function useApi<T>(path: string | null) {
     } finally {
       if (id === seq.current) setLoading(false);
     }
-  }, [path]);
+  }, [key]);
 
   useEffect(() => {
     void reload();

@@ -41,5 +41,5 @@ out = [
 ]
 for tag in sorted(groups):
     out += [f"## {tag}", "", "| Метод | URL | Назначение | Параметры | Тело | Доступ |", "|---|---|---|---|---|---|", *groups[tag], ""]
-(root / "docs" / "API-endpoints.md").write_text("\n".join(out), encoding="utf-8")
+(root / "docs" / "API-endpoints.md").write_text("\n".join(out), encoding="utf-8", newline="\n")  # LF и на Windows (.gitattributes)
 print("operations:", sum(len(v) for v in groups.values()))

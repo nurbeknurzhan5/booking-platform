@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, Modal, Select, Spinner, Table, Td, Textarea } from '@/components/ui';
 import { ImageUpload } from './ImageUpload';
+import { apiPath } from '@/lib/api-path';
 
 interface ServiceLite {
   id: string;
@@ -40,14 +41,14 @@ interface Resource {
 
 function useBranchServices(branchId: string) {
   const { base } = useOrg();
-  return useApi<ServiceLite[]>(`${base}/services?branchId=${branchId}`);
+  return useApi<ServiceLite[]>(apiPath`${base}/services?branchId=${branchId}`);
 }
 
 /** Специалисты филиала: отдельная карточка в каждом филиале (§4). */
 export function SpecialistsTab({ branchId }: { branchId: string }) {
   const { base, can, canManage } = useOrg();
   const { t } = useT();
-  const list = useApi<Specialist[]>(`${base}/branches/${branchId}/specialists`);
+  const list = useApi<Specialist[]>(apiPath`${base}/branches/${branchId}/specialists`);
   const services = useBranchServices(branchId);
   const [edit, setEdit] = useState<(Partial<Specialist> & { services: Specialist['services'] }) | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +68,8 @@ export function SpecialistsTab({ branchId }: { branchId: string }) {
       services: edit.services,
     };
     try {
-      if (edit.id) await api(`${base}/branches/${branchId}/specialists/${edit.id}`, { method: 'PATCH', body });
-      else await api(`${base}/branches/${branchId}/specialists`, { method: 'POST', body });
+      if (edit.id) await api(apiPath`${base}/branches/${branchId}/specialists/${edit.id}`, { method: 'PATCH', body });
+      else await api(apiPath`${base}/branches/${branchId}/specialists`, { method: 'POST', body });
       setEdit(null);
       await list.reload();
     } catch (e) {
@@ -122,7 +123,7 @@ export function SpecialistsTab({ branchId }: { branchId: string }) {
             </fieldset>
             <div className="flex justify-between pt-2">
               {edit.id ? (
-                <Button variant="danger" onClick={async () => { setError(null); try { await api(`${base}/branches/${branchId}/specialists/${edit.id}`, { method: 'DELETE' }); setEdit(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
+                <Button variant="danger" onClick={async () => { setError(null); try { await api(apiPath`${base}/branches/${branchId}/specialists/${edit.id!}`, { method: 'DELETE' }); setEdit(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
               ) : <span />}
               <Button onClick={save}>{t('save')}</Button>
             </div>
@@ -139,7 +140,7 @@ const TYPES = ['cabinet', 'hall', 'equipment', 'vehicle', 'service_bay', 'other'
 export function ResourcesTab({ branchId }: { branchId: string }) {
   const { base, can, canManage } = useOrg();
   const { t, st } = useT();
-  const list = useApi<Resource[]>(`${base}/branches/${branchId}/resources`);
+  const list = useApi<Resource[]>(apiPath`${base}/branches/${branchId}/resources`);
   const services = useBranchServices(branchId);
   const [edit, setEdit] = useState<(Partial<Resource> & { serviceIds: string[] }) | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -183,15 +184,15 @@ export function ResourcesTab({ branchId }: { branchId: string }) {
             </fieldset>
             <div className="flex justify-between pt-2">
               {edit.id ? (
-                <Button variant="danger" onClick={async () => { setError(null); try { await api(`${base}/branches/${branchId}/resources/${edit.id}`, { method: 'DELETE' }); setEdit(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
+                <Button variant="danger" onClick={async () => { setError(null); try { await api(apiPath`${base}/branches/${branchId}/resources/${edit.id!}`, { method: 'DELETE' }); setEdit(null); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
               ) : <span />}
               <Button
                 onClick={async () => {
                   setError(null);
                   try {
                     const body = { name: edit.name, description: edit.description || undefined, isActive: edit.isActive ?? true, isPublic: edit.isPublic ?? false, photoAssetId: edit.photoAssetId ?? null, serviceIds: edit.serviceIds };
-                    if (edit.id) await api(`${base}/branches/${branchId}/resources/${edit.id}`, { method: 'PATCH', body });
-                    else await api(`${base}/branches/${branchId}/resources`, { method: 'POST', body: { ...body, type: edit.type } });
+                    if (edit.id) await api(apiPath`${base}/branches/${branchId}/resources/${edit.id}`, { method: 'PATCH', body });
+                    else await api(apiPath`${base}/branches/${branchId}/resources`, { method: 'POST', body: { ...body, type: edit.type } });
                     setEdit(null);
                     await list.reload();
                   } catch (e) {

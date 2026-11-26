@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { errorMessage, uploadFile } from '@/lib/api';
 import { useOrg } from './OrgContext';
 import { useT } from '@/lib/i18n-dashboard';
+import { apiPath } from '@/lib/api-path';
 
 /** Загрузка изображения (проверка формата и размера — на сервере). */
 export function ImageUpload({ kind, value, preview, onChange }: { kind: string; value: string | null | undefined; preview?: string | null; onChange: (id: string | null, urls?: Record<string, string>) => void }) {
@@ -27,7 +28,7 @@ export function ImageUpload({ kind, value, preview, onChange }: { kind: string; 
             setBusy(true);
             setError(null);
             try {
-              const r = await uploadFile(`${base}/files`, f, kind);
+              const r = await uploadFile(apiPath`${base}/files`, f, kind);
               setUrl(r.urls.thumb ?? null);
               onChange(r.id, r.urls);
             } catch (err) {

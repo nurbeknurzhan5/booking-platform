@@ -7,6 +7,7 @@ import { useApi } from '@/lib/hooks';
 import { useT, type DashKey } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Checkbox, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Entry {
   id: string;
@@ -43,9 +44,9 @@ export default function WaitlistPage() {
   const { base, branch, can, isOwner } = useOrg();
   const { t } = useT();
   const [status, setStatus] = useState<'active' | Entry['status']>('active');
-  const query = branch ? `${base}/waitlist?branchId=${branch.id}&pageSize=100&status=${status}` : null;
+  const query = branch ? apiPath`${base}/waitlist?branchId=${branch.id}&pageSize=100&status=${status}` : null;
   const list = useApi<Page>(query);
-  const rules = useApi<Rules>(branch && isOwner ? `${base}/branches/${branch.id}/booking-settings` : null);
+  const rules = useApi<Rules>(branch && isOwner ? apiPath`${base}/branches/${branch.id}/booking-settings` : null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const manage = branch ? can('appointments.manage', branch.id) : false;
@@ -96,7 +97,7 @@ export default function WaitlistPage() {
                     aria-label={t('priority')}
                     onBlur={(ev) => {
                       const v = Number(ev.target.value);
-                      if (v !== e.priority && Number.isInteger(v) && v >= 0 && v <= 100) void act(() => api(`${base}/waitlist/${e.id}`, { method: 'PATCH', body: { priority: v } }));
+                      if (v !== e.priority && Number.isInteger(v) && v >= 0 && v <= 100) void act(() => api(apiPath`${base}/waitlist/${e.id}`, { method: 'PATCH', body: { priority: v } }));
                     }}
                   />
                 ) : e.priority}
@@ -107,7 +108,7 @@ export default function WaitlistPage() {
               </Td>
               <Td>
                 {manage && (e.status === 'waiting' || e.status === 'offered') && (
-                  <Button size="sm" variant="ghost" onClick={() => { if (confirm(`${t('wlRemove')}?`)) void act(() => api(`${base}/waitlist/${e.id}/cancel`, { method: 'POST', body: {} })); }}>{t('wlRemove')}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { if (confirm(`${t('wlRemove')}?`)) void act(() => api(apiPath`${base}/waitlist/${e.id}/cancel`, { method: 'POST', body: {} })); }}>{t('wlRemove')}</Button>
                 )}
               </Td>
             </tr>
@@ -122,8 +123,8 @@ export default function WaitlistPage() {
 function AddDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { base, branch } = useOrg();
   const { t } = useT();
-  const services = useApi<ServiceRow[]>(branch ? `${base}/services?branchId=${branch.id}` : null);
-  const specialists = useApi<SpecialistRow[]>(branch ? `${base}/branches/${branch.id}/specialists` : null);
+  const services = useApi<ServiceRow[]>(branch ? apiPath`${base}/services?branchId=${branch.id}` : null);
+  const specialists = useApi<SpecialistRow[]>(branch ? apiPath`${base}/branches/${branch.id}/specialists` : null);
   const today = new Date().toISOString().slice(0, 10);
   const [selected, setSelected] = useState<string[]>([]);
   const [specialistId, setSpecialistId] = useState('');
@@ -143,7 +144,7 @@ function AddDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () 
           e.preventDefault();
           setError(null);
           try {
-            await api(`${base}/waitlist`, {
+            await api(apiPath`${base}/waitlist`, {
               method: 'POST',
               body: {
                 branchId: branch!.id,

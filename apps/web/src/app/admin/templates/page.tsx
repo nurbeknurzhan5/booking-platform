@@ -5,6 +5,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Spinner, Textarea, statusTone } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface Tpl {
   id: string;
@@ -20,13 +21,13 @@ interface Tpl {
 /** Каталог шаблонов (§13.4): создание, новая версия конфигурации, публикация, отключение. */
 export default function TemplatesAdmin() {
   const { t, st } = useT();
-  const list = useApi<Tpl[]>('/admin/templates');
+  const list = useApi<Tpl[]>(apiPath`/admin/templates`);
   const [editing, setEditing] = useState<{ id?: string; key: string; name: string; description: string; config: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const setStatus = async (id: string, status: 'published' | 'disabled') => {
     setError(null);
     try {
-      await api(`/admin/templates/${id}/status`, { method: 'POST', body: { status } });
+      await api(apiPath`/admin/templates/${id}/status`, { method: 'POST', body: { status } });
       await list.reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -66,8 +67,8 @@ export default function TemplatesAdmin() {
                   setError(null);
                   try {
                     const config = JSON.parse(editing.config);
-                    if (editing.id) await api(`/admin/templates/${editing.id}`, { method: 'PATCH', body: { name: editing.name, description: editing.description, config } });
-                    else await api('/admin/templates', { method: 'POST', body: { key: editing.key, name: editing.name, description: editing.description, config } });
+                    if (editing.id) await api(apiPath`/admin/templates/${editing.id}`, { method: 'PATCH', body: { name: editing.name, description: editing.description, config } });
+                    else await api(apiPath`/admin/templates`, { method: 'POST', body: { key: editing.key, name: editing.name, description: editing.description, config } });
                     setEditing(null);
                     await list.reload();
                   } catch (e) {

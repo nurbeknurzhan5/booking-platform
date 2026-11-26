@@ -14,6 +14,11 @@ export const RETENTION_DAYS = {
   analyticsEvents: 730,
   /** Канал dev_inbox (только dev/test). */
   devInbox: 7,
+  /**
+   * Освобождённые резервы записи (телефон и IP гостя). После подтверждения, отмены или истечения
+   * резерв не нужен: запись хранит клиента, а номер — карточка клиента.
+   */
+  bookingHolds: 30,
 } as const;
 
 const BATCH = 5000;
@@ -58,6 +63,11 @@ export class RetentionService {
             SELECT id FROM analytics_events WHERE occurred_at < ${before(RETENTION_DAYS.analyticsEvents)} LIMIT ${BATCH})`,
       ),
       devInbox: (await this.prisma.devInboxMessage.deleteMany({ where: { createdAt: { lt: before(RETENTION_DAYS.devInbox) } } })).count,
+      bookingHolds: await this.drain(() =>
+        this.prisma.$executeRaw`
+          DELETE FROM booking_holds WHERE id IN (
+            SELECT id FROM booking_holds WHERE released_at IS NOT NULL AND released_at < ${before(RETENTION_DAYS.bookingHolds)} LIMIT ${BATCH})`,
+      ),
     };
     const total = Object.values(result).reduce((s, n) => s + n, 0);
     if (total) this.logger.log({ ...result }, 'Retention cleanup');

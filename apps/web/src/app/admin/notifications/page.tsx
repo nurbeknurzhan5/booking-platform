@@ -5,6 +5,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, PageHeader, Select, Spinner, Table, Td, statusTone } from '@/components/ui';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface Row {
   id: string;
@@ -23,8 +24,8 @@ interface Row {
 export default function NotificationsAdmin() {
   const { t, st } = useT();
   const [status, setStatus] = useState('dead');
-  const list = useApi<Row[]>(`/admin/notifications${status ? `?status=${status}` : ''}`);
-  const stats = useApi<Array<{ status: string; channel: string; count: number }>>('/admin/notifications/stats');
+  const list = useApi<Row[]>(apiPath`/admin/notifications${apiQuery({ status })}`);
+  const stats = useApi<Array<{ status: string; channel: string; count: number }>>(apiPath`/admin/notifications/stats`);
   const [error, setError] = useState<string | null>(null);
   return (
     <div>
@@ -50,7 +51,7 @@ export default function NotificationsAdmin() {
                 <Td>{r.recipient}</Td>
                 <Td><Badge tone={statusTone(r.status)}>{st(r.status)}</Badge> <span className="text-xs text-slate-400">{r.attempts}/{r.maxAttempts}</span></Td>
                 <Td className="max-w-sm text-xs text-rose-700">{r.lastError}</Td>
-                <Td>{r.status === 'dead' && <Button size="sm" variant="secondary" onClick={async () => { setError(null); try { await api(`/admin/notifications/${r.id}/retry`, { method: 'POST' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('retry')}</Button>}</Td>
+                <Td>{r.status === 'dead' && <Button size="sm" variant="secondary" onClick={async () => { setError(null); try { await api(apiPath`/admin/notifications/${r.id}/retry`, { method: 'POST' }); await list.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('retry')}</Button>}</Td>
               </tr>
             ))}
           </Table>

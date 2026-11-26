@@ -15,6 +15,7 @@ import { AuditService } from '../common/audit.service';
 import { getConfig } from '../config/config';
 import { AvailabilityService, type BookingContext } from './availability.service';
 import { BookingService } from './booking.service';
+import { verifiedUserIdByPhone } from './client-scope';
 import type { RequestItem, SlotAssignment } from './engine';
 import type { ActorContext } from '../common/request-context';
 import type { Branch, BookingSettings, Prisma, WaitlistEntry } from '../generated/prisma/client';
@@ -73,11 +74,9 @@ export class WaitlistService {
     return serviceIds.map((serviceId) => ({ serviceId, specialistId }));
   }
 
-  private async settingsFor(db: Tx | PrismaService, branch: Branch): Promise<BookingSettings> {
-    return (
-      (await db.bookingSettings.findUnique({ where: { branchId: branch.id } })) ??
-      (await db.bookingSettings.create({ data: { branchId: branch.id, organizationId: branch.organizationId } }))
-    );
+  private settingsFor(db: Tx | PrismaService, branch: Branch): Promise<BookingSettings> {
+    // Без гонки первой вставки (параллельные запросы к новому филиалу не дают 500).
+    return this.availability.ensureSettings(db, branch);
   }
 
   /** Проверка заявки: даты в горизонте записи, услуги доступны в филиале, специалист оказывает все услуги. */
@@ -231,8 +230,9 @@ export class WaitlistService {
     await this.prisma.$transaction(async (tx) => {
       const r = await tx.waitlistEntry.updateMany({ where: { id: e.id, status: 'pending_otp' }, data: { status: 'waiting' } });
       if (r.count !== 1) throw AppError.conflict('Заявка изменилась, обновите страницу');
-      const user = await tx.user.findUnique({ where: { phone: e.client.phone }, select: { id: true } });
-      if (user) await tx.client.updateMany({ where: { id: e.clientId, userId: null }, data: { userId: user.id } });
+      // Привязка к профилю — только к профилю с подтверждённым номером (номер сотрудника задаётся без кода).
+      const userId = await verifiedUserIdByPhone(tx, e.client.phone);
+      if (userId) await tx.client.updateMany({ where: { id: e.clientId, userId: null }, data: { userId } });
     });
     return this.entryView(e.id);
   }

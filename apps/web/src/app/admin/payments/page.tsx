@@ -5,10 +5,11 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { Card, PageHeader, Spinner, Table, Td } from '@/components/ui';
 import { money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 export default function PaymentsPage() {
   const { t } = useT();
-  const { data, loading } = useApi<Array<{ id: string; amount: number; paidAt: string; method: string; reference: string | null; organization: { id: string; name: string } }>>('/admin/payments');
+  const { data, loading } = useApi<Array<{ id: string; amount: number; paidAt: string; method: string; reference: string | null; organization: { id: string; name: string } }>>(apiPath`/admin/payments`);
   return (
     <div>
       <PageHeader title={t('payments')} />

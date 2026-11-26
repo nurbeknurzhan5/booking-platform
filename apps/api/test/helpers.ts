@@ -38,6 +38,8 @@ export class Http {
   private agent: ReturnType<typeof request.agent>;
   csrf = '';
   mfaCode?: string;
+  /** Вызывается перед каждым запросом (например, сброс защиты от повтора TOTP в тестах суперадмина). */
+  beforeRequest?: () => Promise<void>;
   ip: string;
 
   constructor(app: NestExpressApplication, ip = `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`) {
@@ -63,18 +65,23 @@ export class Http {
   }
 
   async get(url: string, headers?: Record<string, string>) {
+    await this.beforeRequest?.();
     return this.capture(await this.decorate(this.agent.get(url), headers));
   }
   async post(url: string, body?: unknown, headers?: Record<string, string>) {
+    await this.beforeRequest?.();
     return this.capture(await this.decorate(this.agent.post(url), headers).send(body as object));
   }
   async put(url: string, body?: unknown, headers?: Record<string, string>) {
+    await this.beforeRequest?.();
     return this.capture(await this.decorate(this.agent.put(url), headers).send(body as object));
   }
   async patch(url: string, body?: unknown, headers?: Record<string, string>) {
+    await this.beforeRequest?.();
     return this.capture(await this.decorate(this.agent.patch(url), headers).send(body as object));
   }
   async delete(url: string, headers?: Record<string, string>) {
+    await this.beforeRequest?.();
     return this.capture(await this.decorate(this.agent.delete(url), headers));
   }
   raw() {
@@ -104,6 +111,12 @@ export async function loginSuperadmin(ctx: TestContext, sa: Awaited<ReturnType<t
   const res = await http.post(`${API}/auth/staff/login`, { email: sa.email, password: sa.password, totpCode: sa.totp() });
   if (res.status !== 200) throw new Error(`superadmin login failed: ${res.status} ${JSON.stringify(res.body)}`);
   http.mfaCode = sa.totp();
+  // Тесты переиспользуют один TOTP-код для нескольких критических действий подряд, а API принимает
+  // каждый временной шаг только один раз (защита от повтора). Сбрасываем последний принятый шаг перед
+  // запросом; сама защита проверяется в audit-d.int.ts (там хук отключён).
+  http.beforeRequest = async () => {
+    if (http.mfaCode) await ctx.prisma.user.update({ where: { id: sa.user.id }, data: { mfaLastUsedStep: null } });
+  };
   return http;
 }
 

@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, PageHeader, Spinner, Table, Tabs, Td, Textarea, statusTone } from '@/components/ui';
 import { money } from '@/lib/format';
+import { apiPath, type ApiPath } from '@/lib/api-path';
 
 type Tab = 'profile' | 'subscription' | 'notifications' | 'audit';
 
@@ -64,9 +65,9 @@ function Profile() {
   );
 }
 
-function Subscription({ base }: { base: string }) {
+function Subscription({ base }: { base: ApiPath }) {
   const { t, st } = useT();
-  const { data } = useApi<Sub>(`${base}/subscription`);
+  const { data } = useApi<Sub>(apiPath`${base}/subscription`);
   if (!data) return <Spinner />;
   const s = data.subscription;
   return (
@@ -87,7 +88,7 @@ function Subscription({ base }: { base: string }) {
   );
 }
 
-function Notifications({ base }: { base: string }) {
+function Notifications({ base }: { base: ApiPath }) {
   const { t, st } = useT();
   const { data, setData } = useApi<{
     whatsappEnabled: boolean;
@@ -96,8 +97,8 @@ function Notifications({ base }: { base: string }) {
     reviewRequestEnabled: boolean;
     reactivationEnabled: boolean;
     reactivationDays: number;
-  }>(`${base}/notification-settings`);
-  const log = useApi<Array<{ id: string; type: string; channel: string; recipient: string; status: string; attempts: number; lastError: string | null; createdAt: string }>>(`${base}/notifications`);
+  }>(apiPath`${base}/notification-settings`);
+  const log = useApi<Array<{ id: string; type: string; channel: string; recipient: string; status: string; attempts: number; lastError: string | null; createdAt: string }>>(apiPath`${base}/notifications`);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <Spinner />;
@@ -137,7 +138,7 @@ function Notifications({ base }: { base: string }) {
               setErr(null);
               setMsg(null);
               try {
-                await api(`${base}/notification-settings`, { method: 'PUT', body: data });
+                await api(apiPath`${base}/notification-settings`, { method: 'PUT', body: data });
                 setMsg(t('saved'));
               } catch (e) {
                 setErr(errorMessage(e));
@@ -165,9 +166,9 @@ function Notifications({ base }: { base: string }) {
   );
 }
 
-function Audit({ base }: { base: string }) {
+function Audit({ base }: { base: ApiPath }) {
   const { t } = useT();
-  const { data, loading } = useApi<Array<{ id: string; action: string; entityType: string; entityId: string | null; actorType: string; createdAt: string; actor: { name: string } | null }>>(`${base}/audit-logs`);
+  const { data, loading } = useApi<Array<{ id: string; action: string; entityType: string; entityId: string | null; actorType: string; createdAt: string; actor: { name: string } | null }>>(apiPath`${base}/audit-logs`);
   if (loading) return <Spinner />;
   return (
     <Card>

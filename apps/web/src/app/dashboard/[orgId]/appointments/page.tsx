@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { Badge, Button, Card, Input, PageHeader, Select, Spinner, Table, Td, Tabs, statusTone } from '@/components/ui';
 import { AppointmentActionsDialog, NewAppointmentDialog, type ApptRow } from '@/components/dashboard/AppointmentDialogs';
 import { addDays, localISODate, money, timeOnly, zonedStartOfDay } from '@/lib/format';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 const STATUSES = ['', 'pending_otp', 'confirmed', 'completed', 'no_show', 'cancelled_by_client', 'cancelled_by_admin', 'expired_otp'];
 
@@ -23,9 +24,9 @@ export default function AppointmentsPage() {
 
   const from = zonedStartOfDay(date, tz);
   const to = zonedStartOfDay(addDays(date, 1), tz);
-  const q = branch ? `${base}/appointments?branchId=${branch.id}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&pageSize=200${status ? `&status=${status}` : ''}` : null;
+  const q = branch ? apiPath`${base}/appointments${apiQuery({ branchId: branch.id, from, to, pageSize: 200, status })}` : null;
   const { data, loading, reload } = useApi<{ items: ApptRow[] }>(q);
-  const specialists = useApi<Array<{ id: string; name: string }>>(branch ? `${base}/branches/${branch.id}/specialists` : null);
+  const specialists = useApi<Array<{ id: string; name: string }>>(branch ? apiPath`${base}/branches/${branch.id}/specialists` : null);
   const canManage = can('appointments.manage', branch?.id);
 
   const columns = useMemo(() => {

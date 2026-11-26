@@ -17,6 +17,7 @@ import { PrismaService } from '../common/prisma.service';
 import { AppError } from '../common/errors';
 import { assertBranchPermission, branchFilter } from '../common/tenant-access';
 import { WaitlistService } from './waitlist.service';
+import { ownClientsWhere } from './client-scope';
 import type { Prisma } from '../generated/prisma/client';
 
 class JoinDto extends createZodDto(JoinWaitlistSchema) {}
@@ -155,21 +156,22 @@ export class MeWaitlistController {
     private readonly waitlist: WaitlistService,
   ) {}
 
-  private clientWhere(user: AuthUser): Prisma.ClientWhereInput {
-    return { OR: [{ userId: user.id }, ...(user.phone ? [{ phone: user.phone, userId: null }] : [])] };
+  /** Карточки клиента текущего пользователя: по номеру — только при подтверждённом номере (см. client-scope). */
+  private clientWhere(user: AuthUser): Promise<Prisma.ClientWhereInput> {
+    return ownClientsWhere(this.prisma, user.id);
   }
 
   @Get()
   @ApiOperation({ summary: 'Мои заявки в листах ожидания' })
-  list(@CurrentUser() user: AuthUser) {
-    return this.waitlist.listForClients(this.clientWhere(user));
+  async list(@CurrentUser() user: AuthUser) {
+    return this.waitlist.listForClients(await this.clientWhere(user));
   }
 
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: 'Выйти из листа ожидания' })
   async cancel(@CurrentUser() user: AuthUser, @Actor() actor: ActorContext, @Param('id', ParseUUIDPipe) id: string) {
-    const e = await this.prisma.waitlistEntry.findFirst({ where: { id, client: this.clientWhere(user) }, select: { id: true } });
+    const e = await this.prisma.waitlistEntry.findFirst({ where: { id, client: await this.clientWhere(user) }, select: { id: true } });
     if (!e) throw AppError.notFound('Заявка');
     return this.waitlist.cancelEntry(id, { ...actor, actorType: 'client' });
   }

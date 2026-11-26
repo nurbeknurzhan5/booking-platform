@@ -8,7 +8,7 @@
     "start:dev": "nest start --watch",
     "worker": "node dist/worker.js",
     "worker:dev": "nest start --watch --entryFile worker",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "jest --runInBand",
     "test:unit": "jest --runInBand --testPathPatterns=\\.spec\\.ts$",
     "test:int": "jest --runInBand --testPathPatterns=\\.int\\.ts$",

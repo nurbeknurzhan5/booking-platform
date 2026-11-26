@@ -166,8 +166,9 @@ export class PublicBookingController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { raw } = await this.booking.findByManageToken(token);
-    const r = await this.idem.run(`reschedule:${raw.id}`, key, body, async () => ({
-      body: await this.booking.reschedule(raw.id, body, publicActor(req), 'client'),
+    // Ключи идемпотентности разделены по действующему лицу: гость (хеш ссылки), клиент кабинета, сотрудник.
+    const r = await this.idem.run(`reschedule:guest:${sha256(token)}:${raw.id}`, key, body, async () => ({
+      body: await this.booking.reschedule(raw.id, body, publicActor(req), 'client', { manageToken: token }),
     }));
     res.status(r.status);
     return r.body;
@@ -186,7 +187,7 @@ export class PublicBookingController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { raw } = await this.booking.findByManageToken(token);
-    const r = await this.idem.run(`cancel:${raw.id}`, key, body, async () => ({
+    const r = await this.idem.run(`cancel:guest:${sha256(token)}:${raw.id}`, key, body, async () => ({
       body: await this.booking.cancel(raw.id, publicActor(req), 'client', body.reason),
     }));
     res.status(r.status);

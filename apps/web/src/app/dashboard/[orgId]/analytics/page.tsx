@@ -6,6 +6,7 @@ import { useApi } from '@/lib/hooks';
 import { useT, type DashKey } from '@/lib/i18n-dashboard';
 import { Card, Field, Input, PageHeader, Select, Spinner, Table, Td } from '@/components/ui';
 import { addDays, localISODate, money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Report {
   totals: Record<'pageViews' | 'uniqueVisitors' | 'bookingClicks' | 'bookingStarts' | 'bookingsCreated' | 'cancellations', number> & { conversionVisitorToBooking: number; conversionClickToBooking: number };
@@ -33,7 +34,7 @@ export default function AnalyticsPage() {
   const [from, setFrom] = useState(addDays(today, -29));
   const [to, setTo] = useState(today);
   const [gran, setGran] = useState<'day' | 'week' | 'month'>('day');
-  const { data, loading } = useApi<Report>(branch ? `${base}/analytics?branchId=${branch.id}&from=${from}&to=${to}&granularity=${gran}` : null);
+  const { data, loading } = useApi<Report>(branch ? apiPath`${base}/analytics?branchId=${branch.id}&from=${from}&to=${to}&granularity=${gran}` : null);
   const max = Math.max(1, ...(data?.series ?? []).map((s) => s.pageViews));
   const kpis: Array<[DashKey, string | number]> = data
     ? [

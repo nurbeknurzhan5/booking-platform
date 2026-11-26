@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Field, Input, PageHeader, Spinner, Table, Td } from '@/components/ui';
 import { money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Plan {
   id: string;
@@ -19,7 +20,7 @@ interface Plan {
 /** Тарифы (§3.4): создание, изменение, включение и отключение. Изменение не затрагивает действующие подписки. */
 export default function PlansPage() {
   const { t } = useT();
-  const plans = useApi<Plan[]>('/admin/plans');
+  const plans = useApi<Plan[]>(apiPath`/admin/plans`);
   const empty = { code: '', name: '', maxBranches: '1', monthlyPrice: '0' };
   const [f, setF] = useState(empty);
   const [edit, setEdit] = useState<{ id: string; name: string; maxBranches: string; monthlyPrice: string } | null>(null);
@@ -49,7 +50,7 @@ export default function PlansPage() {
                   <Td><Input type="number" min={0} value={edit.monthlyPrice} onChange={(e) => setEdit({ ...edit, monthlyPrice: e.target.value })} className="w-32" aria-label={t('pricePerMonth')} /></Td>
                   <Td />
                   <Td className="space-x-2 whitespace-nowrap">
-                    <Button size="sm" onClick={() => run(async () => { await api(`/admin/plans/${p.id}`, { method: 'PATCH', body: { name: edit.name, maxBranches: Number(edit.maxBranches), monthlyPrice: Number(edit.monthlyPrice) } }); setEdit(null); })}>{t('save')}</Button>
+                    <Button size="sm" onClick={() => run(async () => { await api(apiPath`/admin/plans/${p.id}`, { method: 'PATCH', body: { name: edit.name, maxBranches: Number(edit.maxBranches), monthlyPrice: Number(edit.monthlyPrice) } }); setEdit(null); })}>{t('save')}</Button>
                     <Button size="sm" variant="ghost" onClick={() => setEdit(null)}>{t('cancel')}</Button>
                   </Td>
                 </tr>
@@ -62,7 +63,7 @@ export default function PlansPage() {
                   <Td><Badge tone={p.isActive ? 'green' : 'slate'}>{p.isActive ? t('active') : t('integrationOff')}</Badge></Td>
                   <Td className="space-x-2 whitespace-nowrap">
                     <Button size="sm" variant="secondary" onClick={() => setEdit({ id: p.id, name: p.name, maxBranches: String(p.maxBranches), monthlyPrice: String(p.monthlyPrice) })}>{t('edit')}</Button>
-                    <Button size="sm" variant={p.isActive ? 'ghost' : 'secondary'} onClick={() => run(() => api(`/admin/plans/${p.id}`, { method: 'PATCH', body: { isActive: !p.isActive } }))}>
+                    <Button size="sm" variant={p.isActive ? 'ghost' : 'secondary'} onClick={() => run(() => api(apiPath`/admin/plans/${p.id}`, { method: 'PATCH', body: { isActive: !p.isActive } }))}>
                       {p.isActive ? t('disableAction') : t('enableAction')}
                     </Button>
                   </Td>
@@ -78,7 +79,7 @@ export default function PlansPage() {
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              await api('/admin/plans', { method: 'POST', body: { code: f.code, name: f.name, maxBranches: Number(f.maxBranches), monthlyPrice: Number(f.monthlyPrice) } });
+              await api(apiPath`/admin/plans`, { method: 'POST', body: { code: f.code, name: f.name, maxBranches: Number(f.maxBranches), monthlyPrice: Number(f.monthlyPrice) } });
               setF(empty);
             });
           }}

@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Button, Card, Field, Input, Select, Spinner } from '@/components/ui';
 import { weekdayName } from '@/lib/format';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface Interval {
   start: string;
@@ -28,10 +29,10 @@ interface Schedule {
 export function ScheduleTab({ branchId }: { branchId: string }) {
   const { base, can, canManage } = useOrg();
   const { t, lang } = useT();
-  const resources = useApi<Array<{ id: string; name: string; type: string }>>(`${base}/branches/${branchId}/resources`);
-  const specialists = useApi<Array<{ id: string; name: string; resourceId: string }>>(`${base}/branches/${branchId}/specialists`);
+  const resources = useApi<Array<{ id: string; name: string; type: string }>>(apiPath`${base}/branches/${branchId}/resources`);
+  const specialists = useApi<Array<{ id: string; name: string; resourceId: string }>>(apiPath`${base}/branches/${branchId}/specialists`);
   const [resourceId, setResourceId] = useState<string>('');
-  const sched = useApi<Schedule>(`${base}/branches/${branchId}/schedule${resourceId ? `?resourceId=${resourceId}` : ''}`);
+  const sched = useApi<Schedule>(apiPath`${base}/branches/${branchId}/schedule${apiQuery({ resourceId })}`);
   const [days, setDays] = useState<Day[]>([]);
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
   const [ex, setEx] = useState({ dateFrom: '', dateTo: '', kind: 'closed', start: '10:00', end: '14:00', reason: '' });
@@ -119,7 +120,7 @@ export function ScheduleTab({ branchId }: { branchId: string }) {
                   onClick={async () => {
                     setMsg({});
                     try {
-                      await api(`${base}/branches/${branchId}/schedule/weekly`, { method: 'PUT', body: { resourceId: resourceId || null, days } });
+                      await api(apiPath`${base}/branches/${branchId}/schedule/weekly`, { method: 'PUT', body: { resourceId: resourceId || null, days } });
                       setMsg({ ok: t('saved') });
                       await sched.reload();
                     } catch (e) {
@@ -143,7 +144,7 @@ export function ScheduleTab({ branchId }: { branchId: string }) {
                 {e.dateFrom}{e.dateTo !== e.dateFrom ? ` — ${e.dateTo}` : ''} · {e.kind === 'closed' ? t('closedDay') : `${t('customHours')}: ${e.intervals.map((i) => `${i.start}–${i.end}`).join(', ')}`}
                 {e.reason ? ` · ${e.reason}` : ''}
               </span>
-              {canEdit && <button className="text-rose-600" onClick={async () => { await api(`${base}/branches/${branchId}/schedule/exceptions/${e.id}`, { method: 'DELETE' }); await sched.reload(); }}>{t('delete')}</button>}
+              {canEdit && <button className="text-rose-600" onClick={async () => { await api(apiPath`${base}/branches/${branchId}/schedule/exceptions/${e.id}`, { method: 'DELETE' }); await sched.reload(); }}>{t('delete')}</button>}
             </li>
           ))}
         </ul>
@@ -154,7 +155,7 @@ export function ScheduleTab({ branchId }: { branchId: string }) {
               e.preventDefault();
               setMsg({});
               try {
-                await api(`${base}/branches/${branchId}/schedule/exceptions`, {
+                await api(apiPath`${base}/branches/${branchId}/schedule/exceptions`, {
                   method: 'POST',
                   body: { resourceId: resourceId || null, dateFrom: ex.dateFrom, dateTo: ex.dateTo || ex.dateFrom, kind: ex.kind, intervals: ex.kind === 'custom_hours' ? [{ start: ex.start, end: ex.end }] : [], reason: ex.reason || undefined },
                 });

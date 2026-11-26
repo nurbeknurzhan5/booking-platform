@@ -16,7 +16,10 @@ export function MapPicker({ lat, lng, onChange, disabled }: { lat: number | null
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow || e.data?.type !== '2gis-pick') return;
-      cb.current(Math.round(e.data.lat * 1e6) / 1e6, Math.round(e.data.lng * 1e6) / 1e6);
+      const { lat: pLat, lng: pLng } = e.data as { lat?: unknown; lng?: unknown };
+      // только конечные числа в допустимом диапазоне координат
+      if (typeof pLat !== 'number' || typeof pLng !== 'number' || !Number.isFinite(pLat) || !Number.isFinite(pLng) || Math.abs(pLat) > 90 || Math.abs(pLng) > 180) return;
+      cb.current(Math.round(pLat * 1e6) / 1e6, Math.round(pLng * 1e6) / 1e6);
     };
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);

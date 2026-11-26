@@ -8,6 +8,7 @@ import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Checkbox, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, Textarea } from '@/components/ui';
 import { ImageUpload } from '@/components/dashboard/ImageUpload';
 import { minutesLabel, money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface Service {
   id: string;
@@ -63,10 +64,10 @@ const empty = (branchId: string | null): Draft => ({
 export default function ServicesPage() {
   const { base, branches, branchId, can, canManage } = useOrg();
   const { t, st } = useT();
-  const services = useApi<Service[]>(`${base}/services`);
-  const categories = useApi<Category[]>(`${base}/service-categories`);
+  const services = useApi<Service[]>(apiPath`${base}/services`);
+  const categories = useApi<Category[]>(apiPath`${base}/service-categories`);
   // Специалисты выбранного филиала: назначение на услугу прямо из её карточки
-  const specialists = useApi<SpecialistLite[]>(branchId ? `${base}/branches/${branchId}/specialists` : null);
+  const specialists = useApi<SpecialistLite[]>(branchId ? apiPath`${base}/branches/${branchId}/specialists` : null);
   const branch = branches.find((b) => b.id === branchId);
   const canAssign = !!branchId && can('specialists.manage', branchId) && canManage;
   const openEdit = (s: Service) =>
@@ -99,11 +100,11 @@ export default function ServicesPage() {
       branches: edit.branchServices.map((b) => ({ branchId: b.branchId, priceOverride: b.priceOverride === null || (b.priceOverride as unknown) === '' ? null : Number(b.priceOverride) })),
     };
     try {
-      const id = edit.id ?? (await api<{ id: string }>(`${base}/services`, { method: 'POST', body })).id;
-      if (edit.id) await api(`${base}/services/${edit.id}`, { method: 'PATCH', body });
+      const id = edit.id ?? (await api<{ id: string }>(apiPath`${base}/services`, { method: 'POST', body })).id;
+      if (edit.id) await api(apiPath`${base}/services/${edit.id}`, { method: 'PATCH', body });
       // Назначение специалистов выбранного филиала, если услуга в нём оказывается
       if (canAssign && edit.requiresSpecialist && edit.branchServices.some((b) => b.branchId === branchId)) {
-        await api(`${base}/branches/${branchId}/specialists/by-service/${id}`, { method: 'PUT', body: { specialistIds: edit.specialistIds } });
+        await api(apiPath`${base}/branches/${branchId}/specialists/by-service/${id}`, { method: 'PUT', body: { specialistIds: edit.specialistIds } });
       }
       setEdit(null);
       await Promise.all([services.reload(), specialists.reload()]);
@@ -141,11 +142,11 @@ export default function ServicesPage() {
             {(categories.data ?? []).map((c) => (
               <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm">
                 {c.name}
-                <button aria-label="delete" className="text-slate-400 hover:text-rose-600" onClick={async () => { await api(`${base}/service-categories/${c.id}`, { method: 'DELETE' }); await categories.reload(); }}>×</button>
+                <button aria-label="delete" className="text-slate-400 hover:text-rose-600" onClick={async () => { await api(apiPath`${base}/service-categories/${c.id}`, { method: 'DELETE' }); await categories.reload(); }}>×</button>
               </span>
             ))}
           </div>
-          <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (!newCat) return; await api(`${base}/service-categories`, { method: 'POST', body: { name: newCat } }); setNewCat(''); await categories.reload(); }}>
+          <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (!newCat) return; await api(apiPath`${base}/service-categories`, { method: 'POST', body: { name: newCat } }); setNewCat(''); await categories.reload(); }}>
             <Input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder={t('name')} className="max-w-xs" />
             <Button variant="secondary" type="submit">{t('add')}</Button>
           </form>
@@ -239,7 +240,7 @@ export default function ServicesPage() {
             </fieldset>
             <div className="flex justify-between gap-2 pt-2">
               {edit.id ? (
-                <Button variant="danger" onClick={async () => { if (!confirm(`${t('archive')}: ${edit.name}?`)) return; setError(null); try { await api(`${base}/services/${edit.id}`, { method: 'DELETE' }); setEdit(null); await services.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
+                <Button variant="danger" onClick={async () => { if (!confirm(`${t('archive')}: ${edit.name}?`)) return; setError(null); try { await api(apiPath`${base}/services/${edit.id!}`, { method: 'DELETE' }); setEdit(null); await services.reload(); } catch (e) { setError(errorMessage(e)); } }}>{t('archive')}</Button>
               ) : <span />}
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setEdit(null)}>{t('cancel')}</Button>

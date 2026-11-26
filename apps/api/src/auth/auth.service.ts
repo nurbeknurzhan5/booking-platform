@@ -8,7 +8,7 @@ import { OtpService } from './otp.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { AuditService } from '../common/audit.service';
 import { NotificationService } from '../notifications/notification.service';
-import { clientIp, type ActorContext, type AuthUser } from '../common/request-context';
+import { clientIp, SYSTEM_ACTOR, type ActorContext, type AuthUser } from '../common/request-context';
 
 const MAX_FAILED_LOGINS = 10;
 const LOCK_MINUTES = 15;
@@ -33,7 +33,8 @@ export class AuthService {
   ): Promise<{ mfaRequired?: boolean; user?: unknown }> {
     const ip = clientIp(req);
     await this.rateLimit.consume(`login:ip:${ip}`, 30, 900);
-    await this.rateLimit.consume(`login:email:${input.email}`, 15, 900);
+    // email в БД регистронезависим (citext) — ключ лимита тоже, иначе «Owner@…» и «owner@…» считались бы раздельно.
+    await this.rateLimit.consume(`login:email:${input.email.toLowerCase()}`, 15, 900);
 
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     const invalid = () => new AppError('INVALID_CREDENTIALS', HttpStatus.UNAUTHORIZED, 'Неверный email или пароль');
@@ -68,10 +69,10 @@ export class AuthService {
         throw new AppError('MFA_REQUIRED', HttpStatus.FORBIDDEN, 'Для суперадминистратора не настроена MFA. Используйте скрипт superadmin:create.');
       }
       if (!input.totpCode) return { mfaRequired: true };
-      await this.rateLimit.consume(`mfa:user:${user.id}`, 10, 900);
-      if (!this.mfa.verify(user.mfaSecretEnc, input.totpCode)) {
-        throw new AppError('MFA_INVALID', HttpStatus.UNAUTHORIZED, 'Неверный код подтверждения');
-      }
+      // Лимит неверных кодов на пользователя (общий со step-up) и защита от повторного использования кода.
+      await this.mfa.verifyForUser(user.id, user.mfaSecretEnc, input.totpCode, (message = 'Неверный код подтверждения') =>
+        new AppError('MFA_INVALID', HttpStatus.UNAUTHORIZED, message),
+      );
       mfaVerified = true;
     }
 
@@ -131,13 +132,31 @@ export class AuthService {
     return { user: await this.profile(user.id) };
   }
 
-  /** Вход/регистрация по подтверждённому номеру и привязка гостевых записей (§10, §11). */
+  /**
+   * Вход/регистрация по подтверждённому номеру и привязка гостевых записей (§10, §11).
+   * Номер, указанный у сотрудника/владельца без подтверждения (phoneVerifiedAt = null), ничего не доказывает:
+   * вход по коду не открывает такой профиль (иначе владелец номера получил бы доступ к учётной записи
+   * сотрудника, а парольная сессия сотрудника — к записям владельца номера). Номер снимается с профиля
+   * сотрудника, карточки клиентов, привязанные к нему по этому номеру, отвязываются, и владелец номера
+   * получает отдельный клиентский профиль.
+   */
   async loginOrRegisterByVerifiedPhone(phone: string, name?: string) {
     const now = new Date();
-    const user = await this.prisma.user.upsert({
-      where: { phone },
-      create: { phone, name: name ?? 'Клиент', phoneVerifiedAt: now },
-      update: { phoneVerifiedAt: now },
+    const user = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({
+        where: { phone },
+        select: { id: true, phoneVerifiedAt: true, passwordHash: true, isSuperadmin: true, _count: { select: { orgRoles: true } } },
+      });
+      if (existing && !existing.phoneVerifiedAt && (existing.passwordHash || existing.isSuperadmin || existing._count.orgRoles > 0)) {
+        await tx.user.update({ where: { id: existing.id }, data: { phone: null } });
+        await tx.client.updateMany({ where: { phone, userId: existing.id }, data: { userId: null } });
+        await this.audit.log(SYSTEM_ACTOR, 'user.unverified_phone_released', 'user', existing.id, {}, tx);
+      }
+      return tx.user.upsert({
+        where: { phone },
+        create: { phone, name: name ?? 'Клиент', phoneVerifiedAt: now },
+        update: { phoneVerifiedAt: now },
+      });
     });
     if (user.blockedAt) throw new AppError('FORBIDDEN', HttpStatus.FORBIDDEN, 'Учётная запись заблокирована');
     await this.prisma.client.updateMany({ where: { phone, userId: null }, data: { userId: user.id } });

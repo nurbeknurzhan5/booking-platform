@@ -4,12 +4,21 @@
 # Хостинг должен располагаться в РК (локализация персональных данных, R-05).
 name: booking
 
+# Один образ API для migrate, api и worker (собирается из корня репозитория).
+x-api-build: &api-build
+  context: ..
+  dockerfile: infra/docker/api.Dockerfile
+
 x-api-env: &api-env
   NODE_ENV: production
+  # Обязательно явно: при NODE_ENV=production без APP_ENV API и воркер не запускаются (fail-closed).
   APP_ENV: production
+  # «Тестовый телефон» (dev_inbox) в production запрещён: при true API не запустится.
+  DEV_INBOX_ENABLED: "false"
   PORT: 4000
   LOG_LEVEL: info
-  TRUST_PROXY: 2
+  # Один «пишущий» прокси перед API — Caddy (X-Forwarded-For клиента он перезаписывает); rewrite Next.js записи не добавляет.
+  TRUST_PROXY: 1
   COOKIE_SECURE: "true"
   WEB_ORIGIN: https://${DOMAIN}
   PUBLIC_BASE_URL: https://${DOMAIN}
@@ -61,9 +70,11 @@ services:
 
   migrate:
     image: booking-api:${VERSION:-latest}
-    build: { context: .., dockerfile: infra/docker/api.Dockerfile }
+    build: *api-build
     environment: *api-env
-    command: ["sh", "-c", "npx prisma migrate deploy && node dist/seed/run-reference-seed.js"]
+    # CLI prisma вызывается напрямую из node_modules (npx в контейнере без домашнего каталога не нужен).
+    command: ["sh", "-c", "../../node_modules/.bin/prisma migrate deploy && node dist/seed/run-reference-seed.js"]
+    healthcheck: { disable: true }
     depends_on:
       db: { condition: service_healthy }
     restart: "no"
@@ -71,6 +82,7 @@ services:
 
   api:
     image: booking-api:${VERSION:-latest}
+    build: *api-build
     restart: unless-stopped
     environment: *api-env
     depends_on:
@@ -80,9 +92,12 @@ services:
 
   worker:
     image: booking-api:${VERSION:-latest}
+    build: *api-build
     restart: unless-stopped
     environment: *api-env
     command: ["node", "dist/worker.js"]
+    # HTTP-порта у воркера нет: проверка образа (GET /health) к нему неприменима.
+    healthcheck: { disable: true }
     depends_on:
       migrate: { condition: service_completed_successfully }
     networks: [internal]
@@ -92,7 +107,8 @@ services:
     build:
       context: ..
       dockerfile: infra/docker/web.Dockerfile
-      args: { NEXT_PUBLIC_2GIS_KEY: "${NEXT_PUBLIC_2GIS_KEY:-}" }
+      # API_INTERNAL_URL подставляется в rewrites /api/* при сборке (standalone его не перечитывает).
+      args: { NEXT_PUBLIC_2GIS_KEY: "${NEXT_PUBLIC_2GIS_KEY:-}", API_INTERNAL_URL: "http://api:4000" }
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:4000

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { NotificationChannel } from '@booking/shared';
 import { PrismaService } from '../common/prisma.service';
-import { getConfig } from '../config/config';
+import { devInboxEnabled, getConfig } from '../config/config';
 
 export interface OutgoingMessage {
   recipient: string; // E.164
@@ -140,18 +140,21 @@ export class SmsChannel implements ChannelAdapter {
   }
 }
 
-/** Канал тестовой среды: сообщения сохраняются в БД (получение OTP в тестах, §26.3). Запрещён в production. */
+/**
+ * Канал тестовой среды: сообщения сохраняются в БД (получение OTP в тестах, §26.3).
+ * Работает только при DEV_INBOX_ENABLED=true и APP_ENV ≠ production.
+ */
 @Injectable()
 export class DevInboxChannel implements ChannelAdapter {
   readonly channel = 'dev_inbox' as const;
   constructor(private readonly prisma: PrismaService) {}
 
   isConfigured(): boolean {
-    return getConfig().APP_ENV !== 'production';
+    return devInboxEnabled();
   }
 
   async send(msg: OutgoingMessage): Promise<{ providerMessageId: string }> {
-    if (!this.isConfigured()) throw new ChannelError('dev_inbox запрещён в production', false, 'FORBIDDEN');
+    if (!this.isConfigured()) throw new ChannelError('dev_inbox выключен (DEV_INBOX_ENABLED) или запрещён в production', false, 'FORBIDDEN');
     const row = await this.prisma.devInboxMessage.create({ data: { recipient: msg.recipient, type: msg.type, text: msg.text } });
     return { providerMessageId: `dev-${row.id}` };
   }

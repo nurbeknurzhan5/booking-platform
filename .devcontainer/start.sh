@@ -20,6 +20,19 @@ setenv() { if grep -q "^$1=" "$ENV_FILE"; then sed -i "s|^$1=.*|$1=$2|" "$ENV_FI
 setenv PUBLIC_BASE_URL "$SITE"
 setenv WEB_ORIGIN "$SITE"
 setenv COOKIE_SECURE "$SECURE"
+# IP для лимитов — адрес соединения от Next.js; X-Forwarded-For клиента не доверяем (D-54, в т. ч. старые стенды с 1/2).
+setenv TRUST_PROXY 0
+# Стенд разработки: «Тестовый телефон» включается явным флагом (решение заказчика).
+setenv DEV_INBOX_ENABLED true
+# Сайт получает флаг при сборке: стенд, собранный до появления флага, пересобирается один раз.
+WEB_ENV_FILE="$ROOT/apps/web/.env.local"
+if ! grep -q '^NEXT_PUBLIC_DEV_INBOX_ENABLED=true' "$WEB_ENV_FILE" 2>/dev/null; then
+  grep -v '^NEXT_PUBLIC_DEV_INBOX_ENABLED=' "$WEB_ENV_FILE" 2>/dev/null > "$WEB_ENV_FILE.tmp" || true
+  echo "NEXT_PUBLIC_DEV_INBOX_ENABLED=true" >> "$WEB_ENV_FILE.tmp"
+  mv "$WEB_ENV_FILE.tmp" "$WEB_ENV_FILE"
+  echo "==> Пересборка сайта с тестовым телефоном (один раз)"
+  (cd apps/web && NEXT_PUBLIC_DEV_INBOX_ENABLED=true npx next build) || { echo "Сборка сайта не удалась"; exit 1; }
+fi
 
 # Останавливаем прежние процессы (повторный запуск)
 pkill -f "node dist/main.js" 2>/dev/null || true

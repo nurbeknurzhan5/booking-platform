@@ -29,9 +29,14 @@ jobs:
       APP_ENV: development
       DATABASE_URL: postgresql://booking_app:ci_only_password@localhost:5432/booking_dev?schema=public
       NOTIFICATION_CHANNELS: dev_inbox
+      # «Тестовый телефон» — только явным флагом: API (DEV_INBOX_ENABLED) и сайт (NEXT_PUBLIC_*, при next build)
+      DEV_INBOX_ENABLED: 'true'
+      NEXT_PUBLIC_DEV_INBOX_ENABLED: 'true'
       WEB_ORIGIN: http://localhost:3000
       PUBLIC_BASE_URL: http://localhost:3000
       COOKIE_SECURE: 'false'
+      # браузер → Next.js → API без перезаписывающего прокси: X-Forwarded-For не доверяем (D-54)
+      TRUST_PROXY: '0'
       STORAGE_DRIVER: local
       TZ: UTC
     steps:

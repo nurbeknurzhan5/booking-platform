@@ -5,7 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { AppError, isUniqueViolation } from '../common/errors';
 import { AuditService } from '../common/audit.service';
 import { PasswordService } from '../auth/password.service';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { assertSubscriptionPeriod, SubscriptionsService } from '../subscriptions/subscriptions.service';
 import type { ActorContext } from '../common/request-context';
 import type { Prisma } from '../generated/prisma/client';
 
@@ -66,6 +66,8 @@ export class AdminOrganizationsService {
 
   /** Создание организации суперадмином (§2.2): организация, владелец и подписка — одной транзакцией. */
   async create(input: CreateOrg, actor: ActorContext) {
+    // До любых записей: неверный период не должен оставлять организацию без подписки.
+    if (input.subscription) assertSubscriptionPeriod(input.subscription.startsAt, input.subscription.endsAt);
     const category = await this.prisma.businessCategory.findUnique({ where: { code: input.businessCategory } });
     if (!category) throw AppError.badRequest('VALIDATION_ERROR', 'Неизвестное направление деятельности');
     try {

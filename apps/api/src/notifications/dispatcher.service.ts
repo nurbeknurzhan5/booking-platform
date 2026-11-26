@@ -5,7 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { decrypt } from '../common/crypto';
 import { getConfig } from '../config/config';
 import { ChannelError, DevInboxChannel, SmsChannel, WhatsAppChannel, type ChannelAdapter, type OutgoingMessage } from './channels';
-import { NotificationService, ONE_TIME_TYPES } from './notification.service';
+import { NotificationService, ONE_TIME_TYPES, RETRYABLE_SENSITIVE_TYPES } from './notification.service';
 import { maskPhone } from '@booking/shared';
 import type { NotificationOutbox } from '../generated/prisma/client';
 
@@ -107,6 +107,8 @@ export class NotificationDispatcher {
   private async deliver(row: NotificationOutbox): Promise<void> {
     const startedAt = new Date();
     const wipe = row.payloadEncrypted ? { payload: {} } : {};
+    // В DLQ зашифрованные параметры остаются только у сообщений, которые можно повторить (см. RETRYABLE_SENSITIVE_TYPES).
+    const wipeOnDead = RETRYABLE_SENSITIVE_TYPES.has(row.type) ? {} : wipe;
     if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
       await this.prisma.notificationOutbox.update({
         where: { id: row.id },
@@ -143,7 +145,7 @@ export class NotificationDispatcher {
             lastError: `${err.code}: ${err.message}`.slice(0, 1000),
             lockedAt: null,
             lockedBy: null,
-            ...(dead ? wipe : {}),
+            ...(dead ? wipeOnDead : {}),
           },
         }),
         this.prisma.notificationAttempt.create({
@@ -190,10 +192,24 @@ export class NotificationDispatcher {
       .catch(() => undefined); // уже создан (уникальный ключ) — повторная обработка без дублей
   }
 
-  /** Ручной повтор сообщения из DLQ (суперадмин). */
+  /**
+   * Ручной повтор сообщения из DLQ (суперадмин). Несекретные — всегда; секретные — только типы из
+   * RETRYABLE_SENSITIVE_TYPES, пока зашифрованные параметры не стёрты и срок сообщения не истёк.
+   * Одноразовые коды и ссылки подтверждения не повторяются: клиент запрашивает новые.
+   */
   async retryDead(outboxId: string): Promise<boolean> {
+    const row = await this.prisma.notificationOutbox.findUnique({
+      where: { id: outboxId },
+      select: { status: true, type: true, payloadEncrypted: true, payload: true, expiresAt: true },
+    });
+    if (!row || row.status !== 'dead') return false;
+    if (row.payloadEncrypted) {
+      const enc = (row.payload as { enc?: unknown } | null)?.enc;
+      if (!RETRYABLE_SENSITIVE_TYPES.has(row.type) || typeof enc !== 'string') return false;
+      if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) return false;
+    }
     const r = await this.prisma.notificationOutbox.updateMany({
-      where: { id: outboxId, status: 'dead', payloadEncrypted: false },
+      where: { id: outboxId, status: 'dead', payloadEncrypted: row.payloadEncrypted },
       data: { status: 'pending', nextAttemptAt: new Date(), maxAttempts: { increment: 1 }, lastError: null },
     });
     return r.count === 1;

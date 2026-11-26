@@ -5,10 +5,13 @@
  */
 export function normalizePhone(input: string): string | null {
   const digits = input.replace(/[^\d+]/g, '');
-  let d = digits.startsWith('+') ? digits.slice(1) : digits;
+  const international = digits.startsWith('+');
+  let d = international ? digits.slice(1) : digits;
   if (!/^\d+$/.test(d)) return null;
   if (d.length === 11 && d.startsWith('8')) d = '7' + d.slice(1);
-  if (d.length === 10) d = '7' + d;
+  // 10 цифр без «+» — номер без кода страны (701 123 45 67). С «+» код страны уже указан:
+  // «+7 701 123 456» — номер с пропущенной цифрой, а не +7 770 112 34 56.
+  if (d.length === 10 && !international) d = '7' + d;
   if (d.length !== 11 || !d.startsWith('7')) return null;
   return '+' + d;
 }
@@ -19,7 +22,7 @@ export function normalizePhone(input: string): string | null {
  * Городские коды (+7 71x/72x/73x…) сюда не входят.
  */
 export function isKzMobile(e164: string): boolean {
-  return /^\+77(0\d|47|5[01]|6[0-4]|7[1578])\d{7}$/.test(e164);
+  return /^\+77(0\d|47|5[01]|6[0-4]|7[15-8])\d{7}$/.test(e164);
 }
 
 /** Любой номер Казахстана (мобильный или городской), например для телефона филиала. */

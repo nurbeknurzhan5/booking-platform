@@ -118,10 +118,13 @@ export class MediaService {
     if (r.count === 0) throw AppError.notFound('Файл');
   }
 
-  /** URL-ы набора ассетов (для публичных страниц). */
-  async urlsFor(ids: string[]): Promise<Map<string, Record<string, string>>> {
+  /**
+   * URL-ы набора ассетов организации (для публичных страниц). Чужие ID (из старой публикации, подложенные
+   * в контент или связи) не разрешаются: изображение другой организации на странице не появится.
+   */
+  async urlsFor(organizationId: string, ids: string[]): Promise<Map<string, Record<string, string>>> {
     if (!ids.length) return new Map();
-    const rows = await this.prisma.mediaAsset.findMany({ where: { id: { in: ids }, archivedAt: null } });
+    const rows = await this.prisma.mediaAsset.findMany({ where: { id: { in: ids }, organizationId, archivedAt: null } });
     return new Map(rows.map((r) => [r.id, this.toView(r).urls]));
   }
 }

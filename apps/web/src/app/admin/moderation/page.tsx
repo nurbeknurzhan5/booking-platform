@@ -5,6 +5,7 @@ import { useApi } from '@/lib/hooks';
 import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, PageHeader, Spinner, Table, Tabs, Td, statusTone } from '@/components/ui';
+import { apiPath } from '@/lib/api-path';
 
 interface PageRow {
   id: string;
@@ -27,8 +28,8 @@ interface ReviewRow {
 export default function Moderation() {
   const { t, st } = useT();
   const [tab, setTab] = useState<'pages' | 'reviews'>('pages');
-  const pages = useApi<PageRow[]>('/admin/pages');
-  const reviews = useApi<ReviewRow[]>('/admin/reviews');
+  const pages = useApi<PageRow[]>(apiPath`/admin/pages`);
+  const reviews = useApi<ReviewRow[]>(apiPath`/admin/reviews`);
   const [error, setError] = useState<string | null>(null);
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -54,7 +55,7 @@ export default function Moderation() {
                 <Td><Badge tone={statusTone(p.status)}>{st(p.status)}</Badge></Td>
                 <Td>{p.moderationBlocked ? <Badge tone="red">{p.moderationReason}</Badge> : '—'}</Td>
                 <Td>
-                  <Button size="sm" variant={p.moderationBlocked ? 'secondary' : 'danger'} onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(`/admin/pages/${p.id}/moderation`, { method: 'POST', body: { blocked: !p.moderationBlocked, reason } })); }}>
+                  <Button size="sm" variant={p.moderationBlocked ? 'secondary' : 'danger'} onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(apiPath`/admin/pages/${p.id}/moderation`, { method: 'POST', body: { blocked: !p.moderationBlocked, reason } })); }}>
                     {p.moderationBlocked ? t('unblock') : t('block')}
                   </Button>
                 </Td>
@@ -72,7 +73,7 @@ export default function Moderation() {
                 <Td className="text-xs text-amber-700">{r.reportReason}</Td>
                 <Td><Badge tone={statusTone(r.status)}>{st(r.status)}</Badge></Td>
                 <Td>
-                  <Button size="sm" variant="secondary" onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(`/admin/reviews/${r.id}/moderate`, { method: 'POST', body: { status: r.status === 'published' ? 'hidden' : 'published', reason } })); }}>
+                  <Button size="sm" variant="secondary" onClick={() => { const reason = prompt(t('reason')); if (reason) void run(() => api(apiPath`/admin/reviews/${r.id}/moderate`, { method: 'POST', body: { status: r.status === 'published' ? 'hidden' : 'published', reason } })); }}>
                     {r.status === 'published' ? t('hideAction') : t('publish')}
                   </Button>
                 </Td>

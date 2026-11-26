@@ -8,7 +8,9 @@ import { api, ApiError, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { dateTime, minutesLabel, money } from '@/lib/format';
 import { analyticsSession, savedUtm, track } from '@/lib/analytics';
+import { DEV_INBOX_ENABLED } from '@/lib/dev-inbox';
 import { BookingSelect, type Quote } from './BookingSelect';
+import { apiPath } from '@/lib/api-path';
 
 type Step = 'select' | 'details' | 'otp' | 'done' | 'waitlist' | 'waitlistOtp' | 'waitlistDone';
 type Slot = SlotsResponse['slots'][number];
@@ -101,7 +103,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
 
   useEffect(() => {
     if (!items.length) return setQuote(null);
-    api<Quote>(`/public/branches/${data.slug}/quote`, { method: 'POST', body: { items, promoCode: appliedPromo } })
+    api<Quote>(apiPath`/public/branches/${data.slug}/quote`, { method: 'POST', body: { items, promoCode: appliedPromo } })
       .then(setQuote)
       .catch((e) => {
         if (e instanceof ApiError && e.code === 'PROMO_INVALID') {
@@ -116,7 +118,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     setError(null);
     setBusy(true);
     try {
-      const r = await api<HoldResponse>(`/public/branches/${data.slug}/bookings`, {
+      const r = await api<HoldResponse>(apiPath`/public/branches/${data.slug}/bookings`, {
         method: 'POST',
         idempotencyKey: holdKey.current,
         body: {
@@ -155,7 +157,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     let alive = true;
     const tick = async () => {
       try {
-        const r = await api<{ status: string }>(`/public/bookings/${hold.appointmentId}/status`, { method: 'POST', body: { holdToken: hold.holdToken } });
+        const r = await api<{ status: string }>(apiPath`/public/bookings/${hold.appointmentId}/status`, { method: 'POST', body: { holdToken: hold.holdToken } });
         if (!alive) return;
         if (r.status === 'confirmed') {
           setDone({ appointment: { ...hold.appointment, status: 'confirmed', hold: null }, manageToken: null });
@@ -183,7 +185,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     setError(null);
     setResent(false);
     try {
-      await api(`/public/bookings/${hold.appointmentId}/resend-link`, { method: 'POST', body: { holdToken: hold.holdToken } });
+      await api(apiPath`/public/bookings/${hold.appointmentId}/resend-link`, { method: 'POST', body: { holdToken: hold.holdToken } });
       setResent(true);
     } catch (e) {
       setError(errorMessage(e));
@@ -193,7 +195,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
   async function extend() {
     if (!hold) return;
     try {
-      const r = await api<{ holdExpiresAt: string }>(`/public/bookings/${hold.appointmentId}/extend`, { method: 'POST', body: { holdToken: hold.holdToken } });
+      const r = await api<{ holdExpiresAt: string }>(apiPath`/public/bookings/${hold.appointmentId}/extend`, { method: 'POST', body: { holdToken: hold.holdToken } });
       setHold({ ...hold, holdExpiresAt: r.holdExpiresAt, appointment: { ...hold.appointment, hold: { expiresAt: r.holdExpiresAt, extensionCount: 1 } } });
     } catch (e) {
       setError(errorMessage(e));
@@ -206,7 +208,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     setBusy(true);
     try {
       const sps = [...new Set(items.map((i) => i.specialistId ?? null))];
-      const r = await api<WaitlistJoin>(`/public/branches/${data.slug}/waitlist`, {
+      const r = await api<WaitlistJoin>(apiPath`/public/branches/${data.slug}/waitlist`, {
         method: 'POST',
         body: {
           items: selected.map((serviceId) => ({ serviceId })),
@@ -235,7 +237,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     setError(null);
     setBusy(true);
     try {
-      await api(`/public/waitlist/${wl.entryId}/confirm`, { method: 'POST', body: { token: wl.token, code } });
+      await api(apiPath`/public/waitlist/${wl.entryId}/confirm`, { method: 'POST', body: { token: wl.token, code } });
       setStep('waitlistDone');
     } catch (e) {
       setError(errorMessage(e));
@@ -248,7 +250,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     if (!wl) return;
     setError(null);
     try {
-      await api(`/public/waitlist/${wl.entryId}/resend-otp`, { method: 'POST', body: { token: wl.token } });
+      await api(apiPath`/public/waitlist/${wl.entryId}/resend-otp`, { method: 'POST', body: { token: wl.token } });
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -258,7 +260,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
     if (!wl) return;
     setError(null);
     try {
-      await api(`/public/waitlist/${wl.entryId}/cancel`, { method: 'POST', body: { token: wl.token } });
+      await api(apiPath`/public/waitlist/${wl.entryId}/cancel`, { method: 'POST', body: { token: wl.token } });
       setWlLeft(true);
     } catch (e) {
       setError(errorMessage(e));
@@ -503,7 +505,7 @@ export function BookingFlow({ data, initialServiceId, initialSpecialistId }: { d
               {t('linkSent')} <b>{hold.appointment.client.phone}</b>
             </p>
             <p className="tpl-muted mb-4 text-sm">{t('linkSentHint')}</p>
-            {hold.testInbox && (
+            {hold.testInbox && DEV_INBOX_ENABLED && (
               <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" data-testid="test-mode">
                 <b>{t('testModeTitle')}.</b> {t('testModeText')}{' '}
                 <a href={`/dev/phone?phone=${encodeURIComponent(hold.appointment.client.phone)}`} target="_blank" rel="noreferrer" className="font-semibold underline" data-testid="open-test-phone">

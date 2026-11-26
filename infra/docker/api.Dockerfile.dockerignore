@@ -1,0 +1,25 @@
+# Контекст сборки образа API (BuildKit читает <имя Dockerfile>.dockerignore рядом с Dockerfile).
+# Секреты, локальные зависимости и артефакты не попадают в образ и кэш слоёв.
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.prod.example
+.git
+.github
+.devcontainer
+.local
+.claude
+docs
+backups
+infra/.env.prod
+apps/api/src/generated
+apps/api/storage
+apps/api/.test-storage
+apps/web/e2e/.auth
+apps/web/playwright-report
+apps/web/test-results
+**/*.log

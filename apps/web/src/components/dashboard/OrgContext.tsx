@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { Spinner } from '@/components/ui';
+import { apiPath, type ApiPath } from '@/lib/api-path';
 
 export interface OrgInfo {
   id: string;
@@ -33,7 +34,8 @@ interface OrgCtx {
   /** Проверка права для отображения UI (сервер проверяет независимо). */
   can: (permission: string, branchId?: string | null) => boolean;
   canManage: boolean;
-  base: string;
+  /** Путь организации в API (/organizations/:id) — основа для apiPath`${base}/…`. */
+  base: ApiPath;
 }
 
 const Ctx = createContext<OrgCtx | null>(null);
@@ -46,7 +48,7 @@ export function OrgProvider({ orgId, children }: { orgId: string; children: Reac
   const [error, setError] = useState<string | null>(null);
 
   const reloadBranches = useCallback(async () => {
-    const list = await api<BranchInfo[]>(`/organizations/${orgId}/branches`);
+    const list = await api<BranchInfo[]>(apiPath`/organizations/${orgId}/branches`);
     setBranches(list);
     setBranchIdState((cur) => {
       const saved = cur ?? localStorage.getItem(`bk_branch_${orgId}`);
@@ -55,7 +57,7 @@ export function OrgProvider({ orgId, children }: { orgId: string; children: Reac
   }, [orgId]);
 
   useEffect(() => {
-    api<OrgInfo>(`/organizations/${orgId}`)
+    api<OrgInfo>(apiPath`/organizations/${orgId}`)
       .then(setOrg)
       .catch((e) => setError(e.message));
     reloadBranches().catch(() => undefined);
@@ -88,7 +90,7 @@ export function OrgProvider({ orgId, children }: { orgId: string; children: Reac
       isOwner,
       can,
       canManage: org.access.role === 'SUPERADMIN' || org.subscriptionStatus === 'active' || org.subscriptionStatus === 'grace_period',
-      base: `/organizations/${org.id}`,
+      base: apiPath`/organizations/${org.id}`,
     };
   }, [org, branches, branchId, setBranchId, reloadBranches]);
 

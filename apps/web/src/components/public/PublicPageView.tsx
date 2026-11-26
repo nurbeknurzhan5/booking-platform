@@ -9,6 +9,7 @@ import { pt } from '@/lib/i18n-public';
 import { money, minutesLabel, weekdayName, formatPhone, shortDate } from '@/lib/format';
 import { captureUtm, track } from '@/lib/analytics';
 import { themeRoot } from '@/lib/theme';
+import { apiPath } from '@/lib/api-path';
 import { MapBlock } from './MapBlock';
 
 
@@ -42,7 +43,7 @@ export function PublicPageView({ data, preview = false, device }: { data: Public
     if (preview) return;
     const utm = captureUtm(new URLSearchParams(location.search));
     track(data.slug, 'page_view', { utm });
-    fetch(`/api/v1/public/pages/${data.slug}/can-edit`, { credentials: 'same-origin' })
+    fetch(`/api/v1${apiPath`/public/pages/${data.slug}/can-edit`}`, { credentials: 'same-origin' })
       .then((r) => r.json())
       .then(setCanEdit)
       .catch(() => undefined);

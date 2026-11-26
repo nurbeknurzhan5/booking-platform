@@ -1,5 +1,7 @@
 'use client';
 
+import type { ApiPath } from './api-path';
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -37,8 +39,8 @@ export interface ApiOptions {
   headers?: Record<string, string>;
 }
 
-/** Запрос к API (через прокси Next.js, cookie-сессия, CSRF double-submit). */
-export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
+/** Запрос к API (через прокси Next.js, cookie-сессия, CSRF double-submit). Путь — только apiPath`…` (значения закодированы). */
+export async function api<T = unknown>(path: ApiPath, opts: ApiOptions = {}): Promise<T> {
   const method = opts.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json', ...(opts.headers ?? {}) };
   if (method !== 'GET') {
@@ -60,7 +62,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   return data as T;
 }
 
-export async function uploadFile(path: string, file: File, kind: string): Promise<{ id: string; urls: Record<string, string> }> {
+export async function uploadFile(path: ApiPath, file: File, kind: string): Promise<{ id: string; urls: Record<string, string> }> {
   const fd = new FormData();
   fd.append('kind', kind);
   fd.append('file', file);

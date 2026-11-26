@@ -6,6 +6,7 @@ import { api, ApiError, errorMessage } from '@/lib/api';
 import type { AppointmentView, SlotsResponse } from '@/lib/types';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { AppointmentCard } from '@/components/public/AppointmentCard';
+import { apiPath } from '@/lib/api-path';
 
 interface Me {
   id: string;
@@ -48,7 +49,7 @@ export function CabinetClient({ lang }: { lang: string }) {
 
   useEffect(() => {
     // /auth/session отвечает 200 и гостю — без ошибки 401 в консоли браузера.
-    api<(Me & { authenticated: true }) | { authenticated: false }>('/auth/session')
+    api<(Me & { authenticated: true }) | { authenticated: false }>(apiPath`/auth/session`)
       .then((s) => setMe(s.authenticated ? s : null))
       .catch(() => setMe(null));
   }, []);
@@ -56,25 +57,25 @@ export function CabinetClient({ lang }: { lang: string }) {
   useEffect(() => {
     if (!me) return;
     if (tab === 'profile') {
-      api<Profile>('/me/profile').then(setProfile).catch((e) => setError(errorMessage(e)));
+      api<Profile>(apiPath`/me/profile`).then(setProfile).catch((e) => setError(errorMessage(e)));
       return;
     }
     if (tab === 'waitlist') {
       setWaitlist(null);
-      api<WaitlistEntryView[]>('/me/waitlist').then(setWaitlist).catch((e) => setError(errorMessage(e)));
+      api<WaitlistEntryView[]>(apiPath`/me/waitlist`).then(setWaitlist).catch((e) => setError(errorMessage(e)));
       return;
     }
     setList(null);
-    api<AppointmentView[]>(`/me/appointments?scope=${tab}`).then(setList).catch((e) => setError(errorMessage(e)));
+    api<AppointmentView[]>(apiPath`/me/appointments?scope=${tab}`).then(setList).catch((e) => setError(errorMessage(e)));
   }, [me, tab]);
 
   const actionsFor = useMemo(
     () => (a: AppointmentView) => ({
       fetchSlots: (date: string) =>
-        api<SlotsResponse>(`/me/appointments/${a.id}/availability`, { method: 'POST', body: { date, items: a.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId })) } }),
-      reschedule: (startAt: string, key: string) => api<AppointmentView>(`/me/appointments/${a.id}/reschedule`, { method: 'POST', body: { startAt }, idempotencyKey: key }),
-      cancel: (key: string) => api<AppointmentView>(`/me/appointments/${a.id}/cancel`, { method: 'POST', body: {}, idempotencyKey: key }),
-      review: (rating: number, text: string) => api(`/me/appointments/${a.id}/review`, { method: 'POST', body: { rating, text: text || undefined } }),
+        api<SlotsResponse>(apiPath`/me/appointments/${a.id}/availability`, { method: 'POST', body: { date, items: a.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId })) } }),
+      reschedule: (startAt: string, key: string) => api<AppointmentView>(apiPath`/me/appointments/${a.id}/reschedule`, { method: 'POST', body: { startAt }, idempotencyKey: key }),
+      cancel: (key: string) => api<AppointmentView>(apiPath`/me/appointments/${a.id}/cancel`, { method: 'POST', body: {}, idempotencyKey: key }),
+      review: (rating: number, text: string) => api(apiPath`/me/appointments/${a.id}/review`, { method: 'POST', body: { rating, text: text || undefined } }),
     }),
     [],
   );
@@ -93,10 +94,10 @@ export function CabinetClient({ lang }: { lang: string }) {
             setError(null);
             try {
               if (!codeSent) {
-                await api('/auth/client/otp/request', { method: 'POST', body: { phone } });
+                await api(apiPath`/auth/client/otp/request`, { method: 'POST', body: { phone } });
                 setCodeSent(true);
               } else {
-                const r = await api<{ user: Me }>('/auth/client/otp/verify', { method: 'POST', body: { phone, code } });
+                const r = await api<{ user: Me }>(apiPath`/auth/client/otp/verify`, { method: 'POST', body: { phone, code } });
                 setMe(r.user);
               }
             } catch (err) {
@@ -120,7 +121,7 @@ export function CabinetClient({ lang }: { lang: string }) {
         <h1 className="text-xl font-semibold">{t('cabinet')}</h1>
         <button
           onClick={async () => {
-            await api('/auth/logout', { method: 'POST' });
+            await api(apiPath`/auth/logout`, { method: 'POST' });
             setMe(null);
           }}
           className="text-sm text-slate-500 underline"
@@ -156,7 +157,7 @@ export function CabinetClient({ lang }: { lang: string }) {
                 onClick={async () => {
                   setError(null);
                   try {
-                    await api(`/me/waitlist/${w.id}/cancel`, { method: 'POST', body: {} });
+                    await api(apiPath`/me/waitlist/${w.id}/cancel`, { method: 'POST', body: {} });
                     setWaitlist((cur) => (cur ?? []).filter((x) => x.id !== w.id));
                   } catch (err) {
                     setError(errorMessage(err));
@@ -183,7 +184,7 @@ export function CabinetClient({ lang }: { lang: string }) {
             e.preventDefault();
             setSavedMsg(false);
             try {
-              setProfile(await api<Profile>('/me/profile', { method: 'PATCH', body: { name: profile.name, locale: profile.locale, consents: profile.consents } }));
+              setProfile(await api<Profile>(apiPath`/me/profile`, { method: 'PATCH', body: { name: profile.name, locale: profile.locale, consents: profile.consents } }));
               setSavedMsg(true);
             } catch (err) {
               setError(errorMessage(err));

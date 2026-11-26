@@ -21,7 +21,7 @@ export interface EnqueueArgs {
   params: Record<string, string>;
   appointmentId?: string | null;
   clientId?: string | null;
-  /** Параметры содержат секрет (OTP) — шифруются и стираются после отправки. */
+  /** Параметры содержат секрет (OTP, ссылка управления или подтверждения) — шифруются и стираются после отправки. */
   sensitive?: boolean;
   /** Не отправлять после этого момента (например, OTP после истечения). */
   expiresAt?: Date;
@@ -45,6 +45,14 @@ const REPLY_TYPES: ReadonlySet<NotificationType> = new Set(['whatsapp_auto_reply
  */
 /** Одноразовые сообщения (код или ссылка подтверждения): канал как у OTP, без настроек организации и согласий на рассылки. */
 export const ONE_TIME_TYPES: ReadonlySet<string> = new Set(['otp', 'booking_link']);
+
+/**
+ * Секретные сообщения, которые можно повторить из DLQ: ссылка управления записью действует до визита,
+ * и без неё гость не сможет перенести или отменить запись. Их зашифрованные параметры при переходе в dead
+ * сохраняются (до отправки или истечения), у остальных секретных (код, ссылка подтверждения,
+ * предложение листа ожидания) — стираются, и повтор невозможен.
+ */
+export const RETRYABLE_SENSITIVE_TYPES: ReadonlySet<string> = new Set(['appointment_confirmed', 'appointment_rescheduled']);
 
 @Injectable()
 export class NotificationService {

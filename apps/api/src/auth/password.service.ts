@@ -3,6 +3,9 @@ import * as argon2 from 'argon2';
 import { authenticator } from 'otplib';
 import { decrypt, encrypt } from '../common/crypto';
 import { getConfig } from '../config/config';
+import { PrismaService } from '../common/prisma.service';
+import { RateLimitService } from '../common/rate-limit.service';
+import { AppError } from '../common/errors';
 
 /** Хранение паролей (argon2id) и TOTP-секретов (зашифрованы AES-256-GCM). */
 @Injectable()
@@ -25,11 +28,22 @@ export class PasswordService {
   }
 }
 
+const TOTP_STEP_SEC = 30;
+const TOTP_OPTIONS = { window: 1, step: TOTP_STEP_SEC, digits: 6 } as const;
+/** Неверных TOTP-кодов на пользователя (вход + подтверждение действий) за окно, после чего — 429. */
+export const MFA_MAX_FAILURES = 10;
+export const MFA_FAILURE_WINDOW_SEC = 900;
+
+/**
+ * TOTP (§22): лимит неверных попыток на пользователя (rate limit на PostgreSQL, общий для входа и step-up)
+ * и защита от повторного использования кода — принимается только временной шаг новее последнего принятого.
+ */
 @Injectable()
 export class MfaService {
-  constructor() {
-    authenticator.options = { window: 1, step: 30, digits: 6 };
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rateLimit: RateLimitService,
+  ) {}
 
   generateSecret(): { secret: string; secretEnc: string } {
     const secret = authenticator.generateSecret(20);
@@ -40,18 +54,37 @@ export class MfaService {
     return authenticator.keyuri(account, 'BookingPlatform', secret);
   }
 
-  verify(secretEnc: string | null, code: string | undefined): boolean {
-    if (!secretEnc || !code || !/^\d{6}$/.test(code)) return false;
+  /** Временной шаг, которому соответствует код (с допуском ±1 шаг), или null. Без побочных эффектов. */
+  matchStep(secretEnc: string | null, code: string | undefined, now = Date.now()): number | null {
+    if (!secretEnc || !code || !/^\d{6}$/.test(code)) return null;
     try {
       const secret = decrypt(getConfig().ENCRYPTION_KEY, secretEnc);
-      return authenticator.check(code, secret);
+      const delta = authenticator.clone({ ...TOTP_OPTIONS, epoch: now }).checkDelta(code, secret);
+      return delta === null ? null : Math.floor(now / 1000 / TOTP_STEP_SEC) + delta;
     } catch {
-      return false;
+      return null;
     }
   }
 
-  /** Для тестов: текущий код по зашифрованному секрету. */
-  currentCode(secretEnc: string): string {
-    return authenticator.generate(decrypt(getConfig().ENCRYPTION_KEY, secretEnc));
+  /**
+   * Проверка TOTP-кода пользователя: лимит неверных попыток → 429 RATE_LIMITED; неверный или уже
+   * использованный код → `invalid()`. Попытка списывается атомарно до проверки (параллельный перебор
+   * не обходит лимит), успешная — возвращается в счётчик.
+   */
+  async verifyForUser(userId: string, secretEnc: string | null, code: string | undefined, invalid: (message?: string) => AppError): Promise<void> {
+    const key = `mfa:user:${userId}`;
+    const hit = await this.rateLimit.hit(key, MFA_MAX_FAILURES, MFA_FAILURE_WINDOW_SEC);
+    if (!hit.allowed) throw AppError.rateLimited(hit.retryAfterSec);
+    const step = this.matchStep(secretEnc, code);
+    if (step === null) throw invalid();
+    // Атомарно: код принимается, только если его шаг новее последнего принятого (повтор перехваченного кода).
+    const claimed = await this.prisma.user.updateMany({
+      where: { id: userId, OR: [{ mfaLastUsedStep: null }, { mfaLastUsedStep: { lt: step } }] },
+      data: { mfaLastUsedStep: step },
+    });
+    if (claimed.count !== 1) {
+      throw invalid('Код уже использован, дождитесь следующего кода в приложении');
+    }
+    await this.rateLimit.refund(key);
   }
 }

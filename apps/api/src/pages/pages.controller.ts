@@ -125,11 +125,13 @@ export class PagesController {
   @Get('organizations/:orgId/translations')
   @RequirePermission('pages.edit')
   @ApiOperation({ summary: 'Переводы контента со статусами (missing / auto_translated / verified / manually_edited)' })
-  listTranslations(@Tenant() t: TenantContext, @Query('entityType') entityType?: string, @Query('locale') locale?: string) {
+  async listTranslations(@Tenant() t: TenantContext, @Query('entityType') entityType?: string, @Query('locale') locale?: string) {
     const types: EntityType[] = ['page', 'service', 'specialist', 'service_category', 'promotion'];
+    // Администратор филиала видит только переводы страниц и специалистов своих филиалов (pages.edit).
     return this.translations.list(t.organizationId, {
       entityType: types.includes(entityType as EntityType) ? (entityType as EntityType) : undefined,
       locale: (LOCALES as readonly string[]).includes(locale ?? '') ? (locale as Locale) : undefined,
+      scope: await this.translations.scopeFor(t),
     });
   }
 
@@ -137,7 +139,7 @@ export class PagesController {
   @RequirePermission('pages.edit')
   @ApiOperation({ summary: 'Ручное редактирование переводов (не перезаписывается автопереводом)' })
   async upsertTranslations(@Tenant() t: TenantContext, @Body() body: TranslationsDto, @Actor() a: ActorContext) {
-    await this.translations.upsertManual(t.organizationId, body.items, a.userId);
+    await this.translations.upsertManual(t, body.items, a.userId);
     return { updated: body.items.length };
   }
 
@@ -145,8 +147,8 @@ export class PagesController {
   @HttpCode(200)
   @RequirePermission('pages.edit')
   @ApiOperation({ summary: 'Поставить автоперевод в очередь (ручные переводы — только с overwriteManual)' })
-  auto(@Tenant() t: TenantContext, @Body() body: AutoDto) {
-    return this.translations.requestAuto(t.organizationId, body.locale, body);
+  async auto(@Tenant() t: TenantContext, @Body() body: AutoDto) {
+    return this.translations.requestAuto(t.organizationId, body.locale, body, await this.translations.scopeFor(t));
   }
 
   // ---------- суперадмин: шаблоны и модерация ----------

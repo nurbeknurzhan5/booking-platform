@@ -10,6 +10,7 @@ import { AppError } from '../common/errors';
 import { APPOINTMENT_INCLUDE, BookingService } from '../booking/booking.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { IdempotencyService } from '../common/idempotency.service';
+import { ownClientsWhere, verifiedPhoneOf } from '../booking/client-scope';
 import type { Prisma } from '../generated/prisma/client';
 
 class ProfileDto extends createZodDto(UpdateMyProfileSchema) {}
@@ -18,7 +19,10 @@ class CancelDto extends createZodDto(CancelSchema) {}
 class ReviewDto extends createZodDto(CreateReviewSchema) {}
 class SearchDto extends createZodDto(AvailabilitySearchSchema) {}
 
-/** Кабинет клиента (§18.1): записи во всех организациях по подтверждённому номеру телефона. */
+/**
+ * Кабинет клиента (§18.1): записи во всех организациях по подтверждённому номеру телефона.
+ * Номер без подтверждения (например, указанный при создании сотрудника) чужих записей не открывает.
+ */
 @ApiTags('clients')
 @ClientAccess()
 @Controller('me')
@@ -30,13 +34,13 @@ export class MeController {
     private readonly idem: IdempotencyService,
   ) {}
 
-  private clientWhere(user: AuthUser): Prisma.ClientWhereInput {
-    return { OR: [{ userId: user.id }, ...(user.phone ? [{ phone: user.phone, userId: null }] : [])] };
+  private clientWhere(user: AuthUser): Promise<Prisma.ClientWhereInput> {
+    return ownClientsWhere(this.prisma, user.id);
   }
 
   /** Владение записью проверяется на сервере: запись принадлежит клиенту текущего пользователя. */
   private async own(user: AuthUser, id: string) {
-    const a = await this.prisma.appointment.findFirst({ where: { id, client: this.clientWhere(user) }, select: { id: true, branchId: true } });
+    const a = await this.prisma.appointment.findFirst({ where: { id, client: await this.clientWhere(user) }, select: { id: true, branchId: true } });
     if (!a) throw AppError.notFound('Запись');
     return a;
   }
@@ -52,7 +56,7 @@ export class MeController {
           ? { OR: [{ status: { in: ['completed', 'no_show'] } }, { status: 'confirmed', endAt: { lte: now } }] }
           : { status: 'confirmed', endAt: { gt: now } };
     const rows = await this.prisma.appointment.findMany({
-      where: { client: this.clientWhere(user), ...where },
+      where: { client: await this.clientWhere(user), ...where },
       orderBy: { startAt: scope === 'upcoming' ? 'asc' : 'desc' },
       take: 100,
       include: APPOINTMENT_INCLUDE,
@@ -80,7 +84,7 @@ export class MeController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.own(user, id);
-    const r = await this.idem.run(`reschedule:${id}`, key, body, async () => ({ body: await this.booking.reschedule(id, body, { ...actor, actorType: 'client' }, 'client') }));
+    const r = await this.idem.run(`reschedule:client:${user.id}:${id}`, key, body, async () => ({ body: await this.booking.reschedule(id, body, { ...actor, actorType: 'client' }, 'client') }));
     res.status(r.status);
     return r.body;
   }
@@ -96,7 +100,7 @@ export class MeController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.own(user, id);
-    const r = await this.idem.run(`cancel:${id}`, key, body, async () => ({ body: await this.booking.cancel(id, { ...actor, actorType: 'client' }, 'client', body.reason) }));
+    const r = await this.idem.run(`cancel:client:${user.id}:${id}`, key, body, async () => ({ body: await this.booking.cancel(id, { ...actor, actorType: 'client' }, 'client', body.reason) }));
     res.status(r.status);
     return r.body;
   }
@@ -111,9 +115,9 @@ export class MeController {
 
   @Get('profile')
   async profile(@CurrentUser() user: AuthUser) {
-    const consents = user.phone
-      ? await this.prisma.clientConsent.findMany({ where: { phone: user.phone, organizationId: null }, orderBy: { createdAt: 'desc' } })
-      : [];
+    // Согласия платформы хранятся по номеру — читаются и меняются только для подтверждённого номера.
+    const phone = await verifiedPhoneOf(this.prisma, user.id);
+    const consents = phone ? await this.prisma.clientConsent.findMany({ where: { phone, organizationId: null }, orderBy: { createdAt: 'desc' } }) : [];
     const latest = (t: string) => consents.find((c) => c.consentType === t)?.granted ?? (t === 'marketing' ? false : true);
     return {
       id: user.id,
@@ -127,14 +131,17 @@ export class MeController {
   @Patch('profile')
   @ApiOperation({ summary: 'Изменить имя, язык и согласия на уведомления' })
   async updateProfile(@CurrentUser() user: AuthUser, @Body() body: ProfileDto, @Actor() actor: ActorContext) {
+    // Отказ от уведомлений по номеру действует во всех организациях: без подтверждённого номера согласия
+    // не записываются (как и без номера вовсе) — иначе можно отключить уведомления чужому номеру.
+    const phone = body.consents ? await verifiedPhoneOf(this.prisma, user.id) : null;
     await this.prisma.user.update({ where: { id: user.id }, data: { name: body.name, locale: body.locale } });
     if (body.name || body.locale) {
       await this.prisma.client.updateMany({ where: { userId: user.id, anonymizedAt: null }, data: { ...(body.name ? { name: body.name } : {}), ...(body.locale ? { locale: body.locale } : {}) } });
     }
-    if (body.consents && user.phone) {
+    if (body.consents && phone) {
       const rows = Object.entries(body.consents).filter(([, v]) => v !== undefined) as Array<[string, boolean]>;
       await this.prisma.clientConsent.createMany({
-        data: rows.map(([consentType, granted]) => ({ userId: user.id, phone: user.phone!, consentType, granted, textVersion: '2026-11-v1', source: 'profile', ip: actor.ip })),
+        data: rows.map(([consentType, granted]) => ({ userId: user.id, phone, consentType, granted, textVersion: '2026-11-v1', source: 'profile', ip: actor.ip })),
       });
     }
     return this.profile({ ...user, name: body.name ?? user.name, locale: body.locale ?? user.locale });

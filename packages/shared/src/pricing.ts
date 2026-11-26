@@ -101,17 +101,23 @@ export function calculateVisitPrice(items: readonly PriceItemInput[], promo?: Pr
       promoError = 'PROMO_MIN_AMOUNT';
     } else {
       const totalDiscount = applyDiscount(eligibleSum, promo);
-      // Пропорциональное распределение; остаток от округления — на последнюю позицию.
-      let distributed = 0;
+      // Пропорциональное распределение с округлением вниз (доля не больше цены позиции).
+      const shares = eligible.map((item) => Math.floor((totalDiscount * item.finalPrice) / eligibleSum));
+      // Остаток от округления — на последние позиции с ненулевой ценой (с конца), не уводя цену ниже 0.
+      // totalDiscount <= eligibleSum, поэтому остаток всегда помещается и не теряется.
+      let remainder = totalDiscount - shares.reduce((s, v) => s + v, 0);
+      for (let idx = eligible.length - 1; idx >= 0 && remainder > 0; idx--) {
+        const item = eligible[idx];
+        const share = shares[idx] ?? 0;
+        if (!item) continue;
+        const add = Math.min(remainder, item.finalPrice - share);
+        shares[idx] = share + add;
+        remainder -= add;
+      }
       eligible.forEach((item, idx) => {
-        const share =
-          idx === eligible.length - 1
-            ? totalDiscount - distributed
-            : Math.floor((totalDiscount * item.finalPrice) / eligibleSum);
-        const applied = Math.min(share, item.finalPrice);
+        const applied = shares[idx] ?? 0;
         item.promoDiscount = applied;
         item.finalPrice -= applied;
-        distributed += applied;
       });
     }
   }

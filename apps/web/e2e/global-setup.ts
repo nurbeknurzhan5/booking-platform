@@ -13,6 +13,11 @@ export const OWNER_STATE = 'e2e/.auth/owner.json';
 export default async function globalSetup(config: FullConfig) {
   const baseURL = config.projects[0]!.use.baseURL!;
   const ctx = await request.newContext({ baseURL });
+  // Сценарии подтверждают запись через «Тестовый телефон»: он есть только при явном флаге (сборка сайта и API).
+  const phone = await ctx.get('/dev/phone');
+  if (phone.status() !== 200) {
+    throw new Error(`«Тестовый телефон» недоступен (/dev/phone → ${phone.status()}): соберите сайт с NEXT_PUBLIC_DEV_INBOX_ENABLED=true и запустите API с DEV_INBOX_ENABLED=true`);
+  }
   const csrf = (await (await ctx.get('/api/v1/auth/csrf')).json()) as { csrfToken: string };
   const r = await ctx.post('/api/v1/auth/staff/login', {
     headers: { 'X-CSRF-Token': csrf.csrfToken },

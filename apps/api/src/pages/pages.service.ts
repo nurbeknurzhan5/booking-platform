@@ -445,7 +445,7 @@ export class PagesService {
       ...specialists.map((s) => s.photoAssetId),
       ...publicResources.map((r) => r.photoAssetId),
     ].filter((x): x is string => !!x);
-    const urls = await this.media.urlsFor([...new Set(assetIds)]);
+    const urls = await this.media.urlsFor(branch.organizationId, [...new Set(assetIds)]);
     const img = (id: string | null | undefined) => (id ? (urls.get(id) ?? null) : null);
 
     // Сначала вычисляем все переводимые тексты — они выставляют флаги autoTranslated / missingTranslation.
@@ -548,10 +548,12 @@ export class PagesService {
 
   /** Кнопка «Редактировать страницу» на публичной странице (§13.2). */
   async canEdit(slug: string, user: AuthUser | undefined) {
-    if (!user || user.sessionKind !== 'staff') return { canEdit: false };
+    // Временный пароль не сменён — staff-маршруты редактора недоступны (PASSWORD_CHANGE_REQUIRED).
+    if (!user || user.sessionKind !== 'staff' || user.mustChangePassword) return { canEdit: false };
     const branch = await this.prisma.branch.findFirst({ where: { slug, archivedAt: null }, select: { id: true, organizationId: true } });
     if (!branch) return { canEdit: false };
-    if (user.isSuperadmin) return { canEdit: true, organizationId: branch.organizationId, branchId: branch.id };
+    // Суперадмин — только в сессии с подтверждённой MFA (как в TenantGuard), иначе редактор всё равно ответит 404.
+    if (user.isSuperadmin && user.mfaVerified) return { canEdit: true, organizationId: branch.organizationId, branchId: branch.id };
     const m = await this.prisma.userOrganizationRole.findFirst({ where: { userId: user.id, organizationId: branch.organizationId, revokedAt: null } });
     if (!m) return { canEdit: false };
     let ok = m.roleCode === 'OWNER';

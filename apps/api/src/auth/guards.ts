@@ -25,6 +25,7 @@ import {
   type RateLimitRule,
 } from '../common/decorators';
 import { clientIp, type AppRequest } from '../common/request-context';
+import { safeEqualStr } from '../common/crypto';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -54,6 +55,10 @@ export class AuthGuard implements CanActivate {
     const user = req.user;
     if (!user) throw AppError.unauthenticated();
     if (mode === 'client') return true;
+    if (mode === 'client-session') {
+      if (user.sessionKind !== 'client') throw AppError.forbidden('Войдите по коду, отправленному на номер телефона');
+      return true;
+    }
 
     if (user.sessionKind !== 'staff') throw AppError.forbidden('Требуется вход сотрудника');
     const allowPending = this.reflector.getAllAndOverride<boolean>(ALLOW_PASSWORD_CHANGE_PENDING, [ctx.getHandler(), ctx.getClass()]);
@@ -71,7 +76,8 @@ export class AuthGuard implements CanActivate {
         throw new AppError('MFA_REQUIRED', HttpStatus.FORBIDDEN, 'Подтвердите действие кодом MFA (заголовок X-MFA-Code)');
       }
       const u = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { mfaSecretEnc: true } });
-      if (!this.mfa.verify(u.mfaSecretEnc, code)) throw new AppError('MFA_INVALID', HttpStatus.FORBIDDEN, 'Неверный код MFA');
+      // Лимит неверных кодов на пользователя (→ 429) и запрет повторного использования кода.
+      await this.mfa.verifyForUser(user.id, u.mfaSecretEnc, code, (message = 'Неверный код MFA') => new AppError('MFA_INVALID', HttpStatus.FORBIDDEN, message));
     }
     return true;
   }
@@ -87,7 +93,7 @@ export class CsrfGuard implements CanActivate {
     const cookies = (req.cookies ?? {}) as Record<string, string>;
     if (!cookies[SESSION_COOKIE]) return true;
     const header = req.headers['x-csrf-token'];
-    if (typeof header !== 'string' || !cookies[CSRF_COOKIE] || header !== cookies[CSRF_COOKIE]) {
+    if (typeof header !== 'string' || !cookies[CSRF_COOKIE] || !safeEqualStr(header, cookies[CSRF_COOKIE])) {
       throw new AppError('CSRF_INVALID', HttpStatus.FORBIDDEN, 'Недействительный CSRF-токен');
     }
     return true;

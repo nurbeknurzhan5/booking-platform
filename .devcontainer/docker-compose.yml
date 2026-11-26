@@ -8,6 +8,9 @@ services:
     network_mode: service:db
     environment:
       TZ: UTC
+      # Стенд разработки: «Тестовый телефон» (dev_inbox) включается только явным флагом.
+      DEV_INBOX_ENABLED: "true"
+      NEXT_PUBLIC_DEV_INBOX_ENABLED: "true"
 
   db:
     image: postgres:17

@@ -8,6 +8,7 @@ import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, PageHeader, Tabs } from '@/components/ui';
 import { ScheduleTab } from '@/components/dashboard/ScheduleTab';
 import { ShiftsBoard } from '@/components/dashboard/ShiftsBoard';
+import { apiPath } from '@/lib/api-path';
 
 type Settings = Record<string, unknown> & { scheduleMode: 'weekly' | 'shifts' };
 
@@ -18,7 +19,7 @@ type Settings = Record<string, unknown> & { scheduleMode: 'weekly' | 'shifts' };
 export default function SchedulePage() {
   const { base, branch, can, isOwner } = useOrg();
   const { t } = useT();
-  const settingsUrl = branch ? `${base}/branches/${branch.id}/booking-settings` : null;
+  const settingsUrl = branch ? apiPath`${base}/branches/${branch.id}/booking-settings` : null;
   const settings = useApi<Settings>(settingsUrl);
   const mode = settings.data?.scheduleMode ?? 'weekly';
   const [tab, setTab] = useState<'shifts' | 'weekly' | null>(null);

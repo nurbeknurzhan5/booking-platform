@@ -24,6 +24,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { AuditService } from '../common/audit.service';
 import { getConfig } from '../config/config';
 import { AvailabilityService, type BookingContext } from './availability.service';
+import { verifiedUserIdByPhone } from './client-scope';
 import type { RequestItem, SlotAssignment } from './engine';
 import type { ActorContext } from '../common/request-context';
 import type { Prisma } from '../generated/prisma/client';
@@ -331,7 +332,8 @@ export class BookingService {
       end: 0,
       items: items.map((it, idx) => {
         const svc = ctx.services.find((s) => s.id === it.serviceId)!;
-        const start = ctx.settings.multiServiceMode === 'parallel' ? 0 : cursor;
+        // Как в движке (planItems): следующая услуга — после буфера «после» предыдущей и буфера «до» текущей.
+        const start = ctx.settings.multiServiceMode === 'parallel' || idx === 0 ? 0 : cursor + svc.bufferBeforeMinutes * 60_000;
         const end = start + svc.durationMinutes * 60_000;
         cursor = end + (svc.bufferAfterMinutes ?? 0) * 60_000;
         return { position: idx, serviceId: it.serviceId, start, end, occupancy: { start, end }, specialistId: it.specialistId ?? null, specialistResourceId: null, resourceIds: [], seats: it.seats ?? 1 };
@@ -370,9 +372,8 @@ export class BookingService {
   async findOrCreateClient(tx: Tx, organizationId: string, phone: string, name: string, locale: string) {
     const existing = await tx.client.findFirst({ where: { organizationId, phone, mergedIntoId: null } });
     if (existing) return existing;
-    const user = await tx.user.findUnique({ where: { phone }, select: { id: true, phoneVerifiedAt: true } });
     return tx.client.create({
-      data: { organizationId, phone, name, locale, userId: user?.phoneVerifiedAt ? user.id : null },
+      data: { organizationId, phone, name, locale, userId: await verifiedUserIdByPhone(tx, phone) },
     });
   }
 
@@ -577,6 +578,8 @@ export class BookingService {
               services: full.items.map((i) => i.serviceNameSnapshot).join(', '),
               manageUrl: this.manageUrl(manageToken, full.locale),
             }),
+            // Ссылка управления — секрет (D-11): параметры шифруются и стираются после отправки.
+            sensitive: true,
             appointmentId: appt.id,
             clientId: client.id,
           });
@@ -799,9 +802,10 @@ export class BookingService {
       await tx.bookingHold.update({ where: { appointmentId }, data: { releasedAt: new Date(), releaseReason: 'confirmed' } });
       await this.history(tx, appt.organizationId, appointmentId, 'pending_otp', 'confirmed', { userId: null, actorType: 'client', ip, userAgent: null }, 'Подтверждено по ссылке');
       await tx.promotionRedemption.updateMany({ where: { appointmentId, status: 'reserved' }, data: { status: 'applied' } });
-      // Привязка к платформенному профилю, если номер уже зарегистрирован (§10).
-      const user = await tx.user.findUnique({ where: { phone: hold.phone }, select: { id: true } });
-      if (user) await tx.client.updateMany({ where: { id: appt.clientId, userId: null }, data: { userId: user.id } });
+      // Привязка к платформенному профилю, если номер уже зарегистрирован и подтверждён кодом (§10).
+      // Номер сотрудника/владельца задаётся без подтверждения — к такому профилю карточка не привязывается.
+      const userId = await verifiedUserIdByPhone(tx, hold.phone);
+      if (userId) await tx.client.updateMany({ where: { id: appt.clientId, userId: null }, data: { userId } });
 
       await this.notifications.enqueue(tx, {
         organizationId: appt.organizationId,
@@ -814,6 +818,8 @@ export class BookingService {
           services: appt.items.map((i) => i.serviceNameSnapshot).join(', '),
           manageUrl: this.manageUrl(manageToken, appt.locale),
         }),
+        // Ссылка управления — секрет (D-11): параметры шифруются и стираются после отправки.
+        sensitive: true,
         appointmentId,
         clientId: appt.clientId,
       });
@@ -1006,6 +1012,8 @@ export class BookingService {
                 services: full.items.map((i) => i.serviceNameSnapshot).join(', '),
                 manageUrl: this.manageUrl(manageToken, full.locale),
               }),
+              // Ссылка управления — секрет (D-11): параметры шифруются и стираются после отправки.
+              sensitive: true,
               appointmentId: appt.id,
               clientId: client.id,
             });
@@ -1026,6 +1034,7 @@ export class BookingService {
     input: { startAt: string; items?: RequestItem[] },
     actor: ActorContext,
     who: StatusActor,
+    opts: { manageToken?: string } = {},
   ) {
     const existing = await this.prisma.appointment.findUnique({ where: { id: appointmentId }, include: APPOINTMENT_INCLUDE });
     if (!existing) throw AppError.notFound('Запись');
@@ -1052,12 +1061,18 @@ export class BookingService {
         this.prisma.$transaction(async (tx) => {
           const locked = await tx.$queryRaw<Array<{ status: string }>>`SELECT status FROM appointments WHERE id = ${appointmentId}::uuid FOR UPDATE`;
           if (locked[0]?.status !== 'confirmed') throw AppError.unprocessable('INVALID_STATUS_TRANSITION', 'Запись больше не активна');
-          await this.lockBranch(tx, existing.branchId);
-          await this.releaseExpiredHolds(tx, { organizationId: existing.organizationId });
+          // Состояние перечитывается под блокировкой: параллельный перенос мог уже изменить время,
+          // и «старое» время в истории и в листе ожидания должно быть актуальным.
+          const current = await tx.appointment.findUniqueOrThrow({ where: { id: appointmentId }, include: APPOINTMENT_INCLUDE });
+          if (who === 'client' && Date.now() > current.startAt.getTime() - settings.rescheduleDeadlineMinutes * 60_000) {
+            throw AppError.unprocessable('RESCHEDULE_DEADLINE_PASSED', 'Срок самостоятельного переноса истёк. Свяжитесь с филиалом.');
+          }
+          await this.lockBranch(tx, current.branchId);
+          await this.releaseExpiredHolds(tx, { organizationId: current.organizationId });
           const ctx = await this.availability.withOccupancy(tx, base, appointmentId);
           const assignment = this.availability.assignmentAt(ctx, items, startAt, audience);
           if (!assignment) throw AppError.slotUnavailable();
-          await this.assertClientLimits(tx, existing.clientId, ctx.settings, new Date(assignment.start), new Date(assignment.end), {
+          await this.assertClientLimits(tx, current.clientId, ctx.settings, new Date(assignment.start), new Date(assignment.end), {
             excludeAppointmentId: appointmentId,
             skip: who !== 'client',
           });
@@ -1067,7 +1082,7 @@ export class BookingService {
           const freedResourceIds = await this.activeResourceIds(tx, appointmentId);
           await tx.appointmentResource.updateMany({ where: { appointmentId, isActive: true }, data: { isActive: false } });
           for (const it of assignment.items) {
-            const old = existing.items.find((o) => o.position === it.position)!;
+            const old = current.items.find((o) => o.position === it.position)!;
             await tx.appointmentItem.update({
               where: { id: old.id },
               data: {
@@ -1080,7 +1095,7 @@ export class BookingService {
             const resIds = [...(it.specialistResourceId ? [it.specialistResourceId] : []), ...it.resourceIds];
             await tx.appointmentResource.createMany({
               data: resIds.map((resourceId) => ({
-                organizationId: existing.organizationId,
+                organizationId: current.organizationId,
                 appointmentId,
                 appointmentItemId: old.id,
                 resourceId,
@@ -1096,35 +1111,42 @@ export class BookingService {
           });
           const rs = await tx.appointmentReschedule.create({
             data: {
-              organizationId: existing.organizationId,
+              organizationId: current.organizationId,
               appointmentId,
-              oldStartAt: existing.startAt,
-              oldEndAt: existing.endAt,
+              oldStartAt: current.startAt,
+              oldEndAt: current.endAt,
               newStartAt: updated.startAt,
               newEndAt: updated.endAt,
-              oldItems: existing.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId, startAt: i.startAt.toISOString() })),
+              oldItems: current.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId, startAt: i.startAt.toISOString() })),
               newItems: updated.items.map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId, startAt: i.startAt.toISOString() })),
               actorType: actor.actorType,
               actorUserId: actor.userId,
             },
           });
-          await this.recordFreedSlot(tx, existing, freedResourceIds, ctx.settings.waitlistEnabled);
+          await this.recordFreedSlot(tx, current, freedResourceIds, ctx.settings.waitlistEnabled);
           await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder']);
           await this.notifications.enqueue(tx, {
-            organizationId: existing.organizationId,
+            organizationId: current.organizationId,
             type: 'appointment_rescheduled',
             eventKey: `appointment:${appointmentId}:rescheduled:${rs.id}`,
-            recipient: existing.client.phone,
+            recipient: current.client.phone,
             locale: updated.locale,
-            params: this.notificationParams(updated, updated.branch, { clientName: updated.client.name, manageUrl: `${getConfig().PUBLIC_BASE_URL}/${updated.locale}/cabinet` }),
+            // Гость, перенёсший запись по ссылке управления, получает ту же ссылку (секрет — шифруется).
+            // Токен хранится только хешем, поэтому при переносе из кабинета или администратором ссылка ведёт
+            // в кабинет: туда входят по коду на тот же номер, а прежняя ссылка управления продолжает действовать.
+            params: this.notificationParams(updated, updated.branch, {
+              clientName: updated.client.name,
+              manageUrl: opts.manageToken ? this.manageUrl(opts.manageToken, updated.locale) : `${getConfig().PUBLIC_BASE_URL}/${updated.locale}/cabinet`,
+            }),
+            sensitive: !!opts.manageToken,
             appointmentId,
-            clientId: existing.clientId,
+            clientId: current.clientId,
           });
           if (who !== 'client') {
             await this.audit.log(actor, 'appointment.rescheduled', 'appointment', appointmentId, {
-              before: { startAt: existing.startAt },
+              before: { startAt: current.startAt },
               after: { startAt: updated.startAt },
-              organizationId: existing.organizationId,
+              organizationId: current.organizationId,
             }, tx);
           }
           return this.toView(updated, ctx.settings);
@@ -1157,6 +1179,11 @@ export class BookingService {
         data: { status: to, cancelledAt: new Date(), cancelReason: reason ?? null },
       });
       if (r.count !== 1) throw AppError.conflict('Статус записи изменился, обновите страницу');
+      // Строка уже заблокирована: время перечитывается — параллельный перенос мог его изменить.
+      const cur = await tx.appointment.findUniqueOrThrow({ where: { id: appointmentId }, select: { startAt: true, endAt: true } });
+      if (who === 'client' && a.status === 'confirmed' && !settings.allowLateCancelException && Date.now() > cur.startAt.getTime() - settings.cancelDeadlineMinutes * 60_000) {
+        throw AppError.unprocessable('CANCEL_DEADLINE_PASSED', 'Срок самостоятельной отмены истёк. Свяжитесь с филиалом.');
+      }
       const freedResourceIds = await this.activeResourceIds(tx, appointmentId);
       await tx.appointmentResource.updateMany({ where: { appointmentId }, data: { isActive: false } });
       await tx.bookingHold.updateMany({ where: { appointmentId, releasedAt: null }, data: { releasedAt: new Date(), releaseReason: 'abandoned' } });
@@ -1164,14 +1191,14 @@ export class BookingService {
       await this.history(tx, a.organizationId, appointmentId, a.status, to, actor, reason);
       await this.notifications.cancelPending(tx, appointmentId, ['appointment_reminder', 'otp', 'booking_link']);
       if (a.status === 'confirmed') {
-        await this.recordFreedSlot(tx, a, freedResourceIds, settings.waitlistEnabled);
+        await this.recordFreedSlot(tx, { ...a, startAt: cur.startAt, endAt: cur.endAt }, freedResourceIds, settings.waitlistEnabled);
         await this.notifications.enqueue(tx, {
           organizationId: a.organizationId,
           type: 'appointment_cancelled',
           eventKey: `appointment:${appointmentId}:cancelled`,
           recipient: a.client.phone,
           locale: a.locale,
-          params: this.notificationParams(a, a.branch, { clientName: a.client.name }),
+          params: this.notificationParams({ ...a, startAt: cur.startAt }, a.branch, { clientName: a.client.name }),
           appointmentId,
           clientId: a.clientId,
         });

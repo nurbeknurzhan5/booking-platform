@@ -3,11 +3,16 @@ import type { Permission } from '@booking/shared';
 import { actorFromRequest, type ActorContext, type AppRequest, type AuthUser, type TenantContext } from './request-context';
 
 export const ACCESS_KEY = 'access_mode';
-/** public — без входа; client — любой вошедший пользователь; staff — сотрудник (по умолчанию); superadmin. */
-export type AccessMode = 'public' | 'client' | 'staff' | 'superadmin';
+/**
+ * public — без входа; client — любой вошедший пользователь; client-session — только сессия клиента (вход по коду
+ * на телефон, номер подтверждён); staff — сотрудник (по умолчанию); superadmin.
+ */
+export type AccessMode = 'public' | 'client' | 'client-session' | 'staff' | 'superadmin';
 
 export const Public = () => SetMetadata(ACCESS_KEY, 'public' satisfies AccessMode);
 export const ClientAccess = () => SetMetadata(ACCESS_KEY, 'client' satisfies AccessMode);
+/** Данные клиента по номеру телефона: парольная сессия сотрудника сюда не допускается. */
+export const ClientSessionOnly = () => SetMetadata(ACCESS_KEY, 'client-session' satisfies AccessMode);
 export const SuperadminOnly = () => SetMetadata(ACCESS_KEY, 'superadmin' satisfies AccessMode);
 
 /** Разрешить маршрут сотруднику, которому нужно сменить временный пароль. */

@@ -37,6 +37,12 @@ export class RateLimitService {
     if (!r.allowed) throw AppError.rateLimited(r.retryAfterSec, code);
   }
 
+  /** Вернуть одну попытку в текущее окно (например, успешная проверка кода не считается неудачной). */
+  async refund(key: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE rate_limit_buckets SET count = GREATEST(count - 1, 0) WHERE key = ${key} AND expires_at > now()`;
+  }
+
   async cleanup(): Promise<number> {
     return this.prisma.$executeRaw`DELETE FROM rate_limit_buckets WHERE expires_at < now()`;
   }

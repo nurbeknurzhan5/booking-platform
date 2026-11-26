@@ -7,6 +7,7 @@ import { api, ApiError, errorMessage } from '@/lib/api';
 import { useApi } from '@/lib/hooks';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { dateTime, minutesLabel, money } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 interface OfferView {
   status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled' | 'lost';
@@ -31,7 +32,7 @@ const STATUS_TEXT: Record<Exclude<OfferView['status'], 'pending'>, PublicKey> = 
 export function WaitlistOfferClient({ token, lang }: { token: string; lang: string }) {
   const t = (k: PublicKey) => pt(lang, k);
   const router = useRouter();
-  const { data, setData, error: loadError, loading } = useApi<OfferView>(`/public/waitlist-offers/${token}`);
+  const { data, setData, error: loadError, loading } = useApi<OfferView>(apiPath`/public/waitlist-offers/${token}`);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [left, setLeft] = useState(false);
@@ -40,12 +41,12 @@ export function WaitlistOfferClient({ token, lang }: { token: string; lang: stri
     setError(null);
     setBusy(true);
     try {
-      const r = await api<{ manageToken: string }>(`/public/waitlist-offers/${token}/accept`, { method: 'POST', body: {} });
+      const r = await api<{ manageToken: string }>(apiPath`/public/waitlist-offers/${token}/accept`, { method: 'POST', body: {} });
       router.push(`/${lang}/manage/${r.manageToken}`);
     } catch (e) {
       setError(errorMessage(e));
       if (e instanceof ApiError && ['WAITLIST_OFFER_CLOSED', 'WAITLIST_OFFER_EXPIRED', 'SLOT_UNAVAILABLE'].includes(e.code)) {
-        setData(await api<OfferView>(`/public/waitlist-offers/${token}`).catch(() => data));
+        setData(await api<OfferView>(apiPath`/public/waitlist-offers/${token}`).catch(() => data));
       }
       setBusy(false);
     }
@@ -55,7 +56,7 @@ export function WaitlistOfferClient({ token, lang }: { token: string; lang: stri
     setError(null);
     setBusy(true);
     try {
-      setData(await api<OfferView>(`/public/waitlist-offers/${token}/decline`, { method: 'POST', body: { leaveWaitlist } }));
+      setData(await api<OfferView>(apiPath`/public/waitlist-offers/${token}/decline`, { method: 'POST', body: { leaveWaitlist } }));
       if (leaveWaitlist) setLeft(true);
     } catch (e) {
       setError(errorMessage(e));

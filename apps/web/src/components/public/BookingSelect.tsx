@@ -5,6 +5,7 @@ import type { PublicPageData, SlotsResponse } from '@/lib/types';
 import { api, errorMessage } from '@/lib/api';
 import { pt, type PublicKey } from '@/lib/i18n-public';
 import { addDays, dateTime, dayParts, localISODate, minutesLabel, money, timeOnly } from '@/lib/format';
+import { apiPath } from '@/lib/api-path';
 
 type Slot = SlotsResponse['slots'][number];
 export interface Overview extends SlotsResponse {
@@ -95,7 +96,7 @@ export function BookingSelect({
     let alive = true;
     setLoading(true);
     setError(null);
-    api<Overview>(`/public/branches/${data.slug}/availability/overview`, { method: 'POST', body: { date, items } })
+    api<Overview>(apiPath`/public/branches/${data.slug}/availability/overview`, { method: 'POST', body: { date, items } })
       .then((r) => {
         if (!alive) return;
         setOverview(r);

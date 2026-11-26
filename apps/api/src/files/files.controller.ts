@@ -100,6 +100,7 @@ export class FilesController {
     res.setHeader('Content-Type', 'image/webp');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
     stream.pipe(res);
   }
 }

@@ -6,21 +6,22 @@ import { useApi } from '@/lib/hooks';
 import type { AppointmentView, SlotsResponse } from '@/lib/types';
 import { pt } from '@/lib/i18n-public';
 import { AppointmentCard, type AppointmentActions } from '@/components/public/AppointmentCard';
+import { apiPath } from '@/lib/api-path';
 
 /** Управление гостевой записью по секретной ссылке (решение D-11). */
 export function ManageClient({ token, lang }: { token: string; lang: string }) {
-  const { data, error, loading } = useApi<AppointmentView>(`/public/manage/${token}`);
-  const base = `/public/manage/${token}`;
+  const base = useMemo(() => apiPath`/public/manage/${token}`, [token]);
+  const { data, error, loading } = useApi<AppointmentView>(base);
   const actions = useMemo<AppointmentActions>(
     () => ({
       fetchSlots: (date) =>
-        api<SlotsResponse>(`${base}/availability`, {
+        api<SlotsResponse>(apiPath`${base}/availability`, {
           method: 'POST',
           body: { date, items: (data?.items ?? []).map((i) => ({ serviceId: i.serviceId, specialistId: i.specialistId })) },
         }),
-      reschedule: (startAt, key) => api<AppointmentView>(`${base}/reschedule`, { method: 'POST', body: { startAt }, idempotencyKey: key }),
-      cancel: (key) => api<AppointmentView>(`${base}/cancel`, { method: 'POST', body: {}, idempotencyKey: key }),
-      review: (rating, text) => api(`${base}/review`, { method: 'POST', body: { rating, text: text || undefined } }),
+      reschedule: (startAt, key) => api<AppointmentView>(apiPath`${base}/reschedule`, { method: 'POST', body: { startAt }, idempotencyKey: key }),
+      cancel: (key) => api<AppointmentView>(apiPath`${base}/cancel`, { method: 'POST', body: {}, idempotencyKey: key }),
+      review: (rating, text) => api(apiPath`${base}/review`, { method: 'POST', body: { rating, text: text || undefined } }),
     }),
     [base, data],
   );

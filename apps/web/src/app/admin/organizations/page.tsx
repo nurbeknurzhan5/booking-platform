@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n-dashboard';
 import { api, errorMessage } from '@/lib/api';
 import { Alert, Badge, Button, Card, Field, Input, Modal, PageHeader, Select, Spinner, Table, Td, statusTone } from '@/components/ui';
 import { addDays } from '@/lib/format';
+import { apiPath, apiQuery } from '@/lib/api-path';
 
 interface OrgRow {
   id: string;
@@ -20,9 +21,9 @@ interface OrgRow {
 export default function AdminOrganizations() {
   const { t, st } = useT();
   const [search, setSearch] = useState('');
-  const list = useApi<OrgRow[]>(`/admin/organizations${search ? `?search=${encodeURIComponent(search)}` : ''}`);
-  const plans = useApi<Array<{ id: string; name: string; maxBranches: number; monthlyPrice: number }>>('/admin/plans');
-  const cats = useApi<Array<{ code: string; nameRu: string }>>('/admin/business-categories');
+  const list = useApi<OrgRow[]>(apiPath`/admin/organizations${apiQuery({ search })}`);
+  const plans = useApi<Array<{ id: string; name: string; maxBranches: number; monthlyPrice: number }>>(apiPath`/admin/plans`);
+  const cats = useApi<Array<{ code: string; nameRu: string }>>(apiPath`/admin/business-categories`);
   const today = new Date().toISOString().slice(0, 10);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ name: '', businessCategory: 'beauty_salon', ownerEmail: '', ownerName: '', ownerPassword: '', planId: '', startsAt: today, endsAt: addDays(today, 30), graceDays: 7 });
@@ -54,7 +55,7 @@ export default function AdminOrganizations() {
             e.preventDefault();
             setError(null);
             try {
-              const r = await api<{ id: string }>('/admin/organizations', {
+              const r = await api<{ id: string }>(apiPath`/admin/organizations`, {
                 method: 'POST',
                 body: {
                   name: f.name,

@@ -4,11 +4,11 @@
 
 | Среда | БД | Каналы уведомлений | Назначение |
 |---|---|---|---|
-| development | `booking_dev` | `dev_inbox` (сообщения в БД) | локальная разработка |
-| test | `booking_test` (отдельная, очищается тестами) | `dev_inbox` | автотесты, E2E |
+| development | `booking_dev` | `dev_inbox` (сообщения в БД; только при `DEV_INBOX_ENABLED=true`) | локальная разработка |
+| test | `booking_test` (отдельная, очищается тестами) | `dev_inbox` (только при `DEV_INBOX_ENABLED=true`) | автотесты, E2E |
 | production | отдельный сервер PostgreSQL в РК | `whatsapp`, `sms` | эксплуатация |
 
-Production и тестовая БД разделены. Тесты отказываются запускаться, если `TEST_DATABASE_URL` совпадает с `DATABASE_URL`. В production канал `dev_inbox` и cookie без `Secure` запрещены: приложение не стартует.
+Production и тестовая БД разделены. Тесты отказываются запускаться, если `TEST_DATABASE_URL` совпадает с `DATABASE_URL`. В production канал `dev_inbox`, флаг `DEV_INBOX_ENABLED=true` и cookie без `Secure` запрещены: приложение не стартует. При `NODE_ENV=production` без явного `APP_ENV` API и воркер тоже не запускаются (fail-closed). «Тестовый телефон» в development и test включается только явно: `DEV_INBOX_ENABLED=true` у API и `NEXT_PUBLIC_DEV_INBOX_ENABLED=true` при сборке сайта (D-44).
 
 ## Production-развёртывание (Docker)
 
@@ -25,12 +25,16 @@ docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod run -
 
 Сервисы:
 - `db` — PostgreSQL 17, UTC, включён WAL-архив;
-- `migrate` — одноразовый: `prisma migrate deploy` + справочники;
+- `migrate` — одноразовый: `../../node_modules/.bin/prisma migrate deploy` + справочники;
 - `api` ×2;
 - `worker` ×1 (можно больше: задачи безопасны при параллельном запуске);
-- `web` — Next.js standalone;
-- `caddy` — HTTPS (Let's Encrypt), HSTS, gzip/zstd;
+- `web` — Next.js standalone; адрес API для rewrites `/api/*` задаётся при сборке образа (build-arg `API_INTERNAL_URL`, по умолчанию `http://api:4000`);
+- `caddy` — HTTPS (Let's Encrypt), HSTS, gzip/zstd; журнал без токенов и учётных заголовков (см. «Мониторинг и логи»);
 - `backup` — ежедневный дамп.
+
+Compose закрепляет `APP_ENV=production`, `DEV_INBOX_ENABLED=false` и `TRUST_PROXY=1`: перед API один «пишущий» прокси — Caddy (без `trusted_proxies` он отбрасывает присланный клиентом `X-Forwarded-For`), rewrite Next.js присланный заголовок пропускает как есть и запись не добавляет (D-54). Без Caddy (сайт открыт напрямую) `TRUST_PROXY` должен быть `0` — иначе посетитель подставляет `X-Forwarded-For` и обходит лимиты. Если перед Caddy появится балансировщик или CDN, задайте в Caddy `trusted_proxies` с его адресами, `TRUST_PROXY` не меняйте.
+
+Образы: в образе API установлен `openssl` (нужен Prisma); у каждого Dockerfile свой `*.Dockerfile.dockerignore`. Сборку образов и `docker compose … config` проверяет job `docker` в CI (**не проверено: нужен прогон CI**, локально Docker не установлен, D-02).
 
 Webhook WhatsApp: `https://{DOMAIN}/api/v1/integrations/whatsapp/webhook` (verify token = `WHATSAPP_VERIFY_TOKEN`, подпись по `WHATSAPP_APP_SECRET`).
 
@@ -46,7 +50,7 @@ Webhook WhatsApp: `https://{DOMAIN}/api/v1/integrations/whatsapp/webhook` (verif
 
 ## Резервное копирование
 
-- **Ежедневно** сервис `backup` делает `pg_dump --format=custom` → проверка `pg_restore --list` → SHA-256 → ротация (по умолчанию 14 дней). Файлы попадают в volume `backups`.
+- **Ежедневно** сервис `backup` делает `pg_dump --format=custom` → проверка `pg_restore --list` → SHA-256 → ротация (по умолчанию 14 дней). Файлы попадают в volume `backups`. Файл `.sha256` содержит имя дампа без каталога: проверка `sha256sum -c` работает после копирования в другое место.
 - **Непрерывно** PostgreSQL копирует WAL-сегменты в volume `walarchive` (`archive_command`). Это позволяет восстановление на момент времени (PITR) от последнего базового бэкапа (`pg_basebackup`, еженедельно — настраивается при выборе инфраструктуры).
 - Копии нужно дополнительно синхронизировать во внешнее хранилище в другом ЦОД РК (например, `rclone`/`aws s3 sync` по cron).
 - Локально и на Windows: `infra/backup/backup-local.ps1 -Database booking_dev -User booking_app -VerifyRestore` делает дамп, восстанавливает его во временную БД, сверяет количество строк и удаляет временную БД. Процедура проверена 2026-11-19: 1 организация, 461 запись, 4 миграции совпали.
@@ -69,8 +73,8 @@ Webhook WhatsApp: `https://{DOMAIN}/api/v1/integrations/whatsapp/webhook` (verif
 
 ## Мониторинг и логи
 
-- **Health check:** `GET /api/v1/health` — статус БД, задержка, размер очереди уведомлений и DLQ. Docker HEALTHCHECK встроен в образ API.
-- **Логи:** структурированный JSON (pino) в stdout. Каждый запрос получает `X-Request-Id`. Cookie, Authorization, CSRF и MFA-коды редактируются, query-строки не логируются (там могут быть токены), номера телефонов маскируются. Централизованный сбор настраивается драйвером логов Docker (Loki/Promtail, ELK или Graylog).
+- **Health check:** `GET /api/v1/health` — статус БД и задержка (на каждый запрос), размер очереди уведомлений и DLQ (обновляется не чаще раза в 30 с, D-51). Docker HEALTHCHECK встроен в образ API.
+- **Логи:** структурированный JSON (pino) в stdout. Каждый запрос получает `X-Request-Id`. Заголовки запроса и ответа не пишутся, query-строки не логируются, сегмент пути после `manage`, `waitlist-offers`, `confirm` заменяется на `[REDACTED]` (там токены), номера телефонов маскируются. Журнал Caddy (`infra/Caddyfile`, `format filter`): в адресе, `Referer` и `Location` токены после `manage`, `confirm`, `waitlist`, `waitlist-offers` и query заменяются на `[REDACTED]`, `Cookie`, `Authorization`, `X-Csrf-Token`, `X-Mfa-Code`, `Idempotency-Key`, `Set-Cookie` удаляются. Централизованный сбор настраивается драйвером логов Docker (Loki/Promtail, ELK или Graylog).
 - **Алерты (рекомендуется):** health ≠ 200; `notifications.dead > 0`; `pending` растёт дольше 5 минут; ошибки 5xx > 1%; свободное место на диске; отсутствие свежего файла в `backups/daily` больше 26 часов.
 - **Админ-панель:** системная статистика, состояние интеграций, очереди сообщений и DLQ с ручным повтором, журнал аудита.
 
